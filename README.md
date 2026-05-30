@@ -4,141 +4,130 @@
 
 Join the community on [Discord](https://discord.gg/YVcsHXSCYG) · Follow on [X](https://x.com/TeamIDElab) · Subreddit: [r/TeamIDELabs](https://www.reddit.com/r/TeamIDELabs/) · YouTube: [@TeamIDElabs](https://www.youtube.com/@TeamIDElabs).
 
-Licensed [GPL-2.0-or-later](LICENSE.md). No warranty. Modifies Lomiri shell files in `/usr/share/lomiri/` and remounts `/` as rw — read [`install.sh`](deploy/install.sh) before running. If something goes wrong, [`uninstall.sh`](deploy/uninstall.sh) restores the original Shell.qml from the backup it makes. If you want help adapting this to a different device, port, or use case, see [HIRE.md](HIRE.md).
+Licensed [GPL-2.0-or-later](LICENSE.md). No warranty. Modifies Lomiri shell files in `/usr/share/lomiri/` and remounts `/` as rw — read [`install.sh`](deploy/install.sh) before running. Every file we touch is preserved as `.orig`; [`uninstall.sh`](deploy/uninstall.sh) restores them. If you want help adapting this to a different device, port, or use case, see [HIRE.md](HIRE.md).
 
 ---
 
-A custom **home surface** for Ubuntu Touch (Lomiri). Replaces the swipe-from-left → app-drawer flow with a fullscreen QML app that sits under everything, shows the user's chosen wallpaper, and renders the installed apps in a 4-wide icon grid. swipe from left click the ubuntu logo and your home.
+A custom **home surface** for Ubuntu Touch (Lomiri). Replaces "drawer-as-default" with what most people actually expect: a wallpapered home grid you land on after unlock, swipeable pages, an optional dock, drag-to-reorder edit mode, and three different placement modes so you can lay your icons out the way you want.
 
-This is the proof-of-concept for the long-term plan of writing our own ImGui+Lua-based home/widget surface. The Lomiri integration (patches + appid wiring + autostart + AccountsService wallpaper read + app enumeration) is what's validated here. The actual UI is intentionally small QML — it will eventually be replaced by an ImGui+Lua binary behind the same `home-spike` appid.
+HomeSpike is loaded **inside the lomiri shell process** as the background layer (where the wallpaper used to live), so it never appears as a separate app in the task switcher and survives whatever the shell does to surfaces. The Lomiri drawer is still there — long-press an app in it to send the app to your HomeSpike grid.
 
 ## Device support
 
-Works on **any Ubuntu Touch 24.04 (noble) device running Lomiri**, regardless of CPU architecture. Built and tested on the OnePlus Nord N100 (`billie2`, aarch64); the design has no device-specific assumptions and the wrapper script globs `/usr/lib/*-linux-gnu*/lomiri/qml` so it picks up Lomiri's modules on aarch64, armhf, and x86_64 alike.
+Works on **any Ubuntu Touch 24.04 (noble) device running Lomiri**, regardless of CPU architecture. Built and tested on the OnePlus Nord N100 (`billie2`, aarch64); the design has no device-specific assumptions and the install pushes plain QML files that lomiri loads via its own QML import paths.
 
 Requirements:
 
 - Ubuntu Touch with **Lomiri** as the shell (pre-Lomiri Unity 8 won't work)
-
 - Developer mode enabled (Settings → About → Developer Mode)
-
 - Known phablet **sudo PIN** (set under Privacy → Security)
-
 - `adb` connection from a host (Mac or Linux)
-
-- Comfortable with the install touching `/usr/share/lomiri/Shell.qml` — the script backs the original up as `Shell.qml.orig` and `uninstall.sh` restores it cleanly
+- Comfortable with the install touching four files under `/usr/share/lomiri/` — each is backed up as `.orig` and `uninstall.sh` restores them cleanly
 
 What's **not** guaranteed:
 
-- **Older or pre-noble UT releases.** The two sed targets (`onShowDashHome: showHome()` and `finishStartUpTimer.start();`) are pattern-matched, not line-pinned, so they survive minor layout drift, but a major Lomiri rewrite can break them silently. The install script's tail-grep prints whether each patch applied — if either shows no match, you're on a Lomiri version we haven't seen.
-
+- **Older or pre-noble UT releases.** The install drops complete replacement copies of four shell QML files (Shell, Stage, Spread, Drawer). A major Lomiri rewrite would mean re-syncing those copies. Re-run `install.sh` and watch for QML errors in `journalctl --user -u lomiri`.
 - **Non-Lomiri shells** (Plasma Mobile on Droidian, Phosh, Sailfish, postmarketOS Sxmo) — entirely different shell stacks, would need a separate port.
 
 If you run it on a device the README doesn't list and it works (or doesn't), let us know on [Discord](https://discord.gg/YVcsHXSCYG) — we'll add the device to the tested list.
 
 ## What you get after `install.sh`
 
-- Boot → unlock → **HomeSpike is already there**, fullscreen, over your wallpaper. No drawer, no taps required.
+- Boot → unlock → **HomeSpike is already there**, fullscreen, under everything.
+- Tap the **Ubuntu logo** (BFB) on the launcher → minimizes any open app to reveal HomeSpike.
+- Right-edge swipe → app spread, now with a **home button** at the bottom to return to HomeSpike.
+- Bottom **dock** (optional, configurable) for up to 5 apps. When the dock is on, Lomiri's left launcher panel auto-collapses so HomeSpike owns the full screen.
+- App grid (4 columns) of every installed app, swipeable across 1–5 pages.
+- Long-press any tile to enter **edit mode**: drag to reorder, tap the × to hide from HomeSpike, drag to the bottom dock or between pages.
+- Long-press any app in the **Lomiri drawer** → "Add to HomeSpike?" prompt → it appears on your home within a couple seconds.
+- **Three placement modes** — Auto-fill, Snap to grid, Place anywhere — each remembers its own layout, so switching modes never loses what you set up before.
 
-- Tap the **Ubuntu logo** (BFB) on the launcher → returns to HomeSpike.
+## Placement modes
 
-- App grid (4 columns, A–Z sorted) of every installed app. Tap an icon → launches that app via the URL dispatcher.
+Pick one in Settings (open edit mode → tap the gear in the bottom-right):
 
-- Open another app → it stacks on top. Close it → HomeSpike revealed again (Lomiri's surface-stacking default).
+| Mode             | What it does                                                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auto-fill**    | Default. Icons flow left-to-right, top-to-bottom with no gaps. Drag to reorder.                                                               |
+| **Snap to grid** | Icons sit on a 4-column grid but can leave gaps. Drop on an empty cell → tile snaps there. Drop on an occupied cell → swap with the occupant. |
+| **Place anywhere** | No grid. Drop anywhere; icons can overlap. Maximum freedom, minimum guard-rails.                                                            |
+
+Switching modes preserves each mode's last saved layout. Flipping back to a mode you used before restores exactly what you had. First-time visits seed from your auto-fill layout so you're never dropped on a blank page.
 
 ## How it works
 
-| Piece                                                                                                             | Lives at (on device)                       | Source                 |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ---------------------- |
-| The QML app                                                                                                       | /opt/home-spike/main.qml                   | app/main.qml           |
-| Exec wrapper (globs /usr/lib/*-linux-gnu*/lomiri/qml into QML2_IMPORT_PATH so Lomiri modules resolve on any arch) | /opt/home-spike/home-spike                 | app/home-spike         |
-| .desktop for appid home-spike                                                                                     | /usr/share/applications/home-spike.desktop | app/home-spike.desktop |
-| Lomiri patches (BFB rewire + autostart)                                                                           | /usr/share/lomiri/Shell.qml                | applied by install.sh  |
-| Original Shell.qml backup                                                                                         | /usr/share/lomiri/Shell.qml.orig           | created by install.sh  |
+HomeSpike is a QML tree loaded by `Loader` at `z: -2` inside Lomiri's own `Stage.qml`, replacing the original `Wallpaper` element. Because it lives inside the lomiri process and isn't a separate application surface, it never shows up in `topLevelSurfaceList` — no spread filtering, no autostart wrapper, no separate `.desktop` file.
 
-### Lomiri patches (two of them)
+| Piece                                       | Lives at (on device)                              | Source                              |
+| ------------------------------------------- | ------------------------------------------------- | ----------------------------------- |
+| HomeSpike QML tree                          | `/opt/home-spike/`                                | `app/`                              |
+| Lomiri shell (BFB rewire, launcher-collapse) | `/usr/share/lomiri/Shell.qml`                     | `app/lomiri-overrides/Shell.qml`    |
+| Lomiri stage (loads HomeSpike at z=-2)      | `/usr/share/lomiri/Stage/Stage.qml`               | `app/lomiri-overrides/Stage.qml`    |
+| Lomiri spread (adds home button)            | `/usr/share/lomiri/Stage/Spread/Spread.qml`       | `app/lomiri-overrides/Spread.qml`   |
+| Lomiri drawer (adds "Add to HomeSpike")     | `/usr/share/lomiri/Launcher/Drawer.qml`           | `app/lomiri-overrides/Drawer.qml`   |
+| Cross-process add inbox (file-based IPC)    | `/home/phablet/.config/home-spike/pending-adds.txt` | created by install                |
+| Saved layout & settings                     | `/home/phablet/.config/home-spike/home-spike.conf`  | written by HomeSpike at runtime    |
 
-1. **BFB rewire** — one-line edit in `Shell.qml`: \`\`\`
+### Lomiri overrides (full files, no sed)
 
-   - onShowDashHome: showHome()
+Every shell file we modify is shipped as a complete replacement copy under `app/lomiri-overrides/`. Install backs up the original as `.orig` and copies our version in. No surgical sed patches — `ls app/lomiri-overrides/` lists every system file HomeSpike touches.
 
+- **`Shell.qml`** — Re-wires the Ubuntu-logo BFB to `stage.minimizeAllWindows()` (so HomeSpike is revealed) instead of opening the drawer; gates `launcher.lockedVisible` on HomeSpike's `dockEnabled` so the panel auto-collapses when the dock is on.
+- **`Stage.qml`** — Replaces the original `Wallpaper` element with a `Loader` pointing at `file:///opt/home-spike/main.qml`; binds the loaded item's `leftReserve` to the launcher width so HomeSpike's grid insets when the panel is visible; exposes `homeSpikeDockEnabled` for the Shell launcher-collapse binding; wires the spread's new `homeRequested` signal to minimize-all.
+- **`Spread.qml`** — Adds a circular home button at the bottom-center of the spread, gated on the spread being shown so its MouseArea doesn't swallow taps when collapsed.
+- **`Drawer.qml`** — Adds a long-press context menu with an "Add to HomeSpike" item that appends the appId to the cross-process inbox file.
 
-   - onShowDashHome: shell.activateApplication("home-spike") \`\`\`
-
-2. **Autostart at session start** — append one line to the existing `Component.onCompleted` block, marked with `// HOME_SPIKE_AUTOSTART` for idempotency.
-
-`install.sh` is idempotent — re-running won't double-patch. It also keeps `Shell.qml.orig` so `uninstall.sh` can cleanly revert.
+`install.sh` is idempotent — re-run safely after any Lomiri update to reapply every override. `uninstall.sh` restores every `.orig`.
 
 ### Wallpaper resolution
 
-Same precedence Lomiri's own shell uses:
+HomeSpike does its own wallpaper rendering inside its main.qml — same precedence Lomiri's own shell uses:
 
 1. `AccountsService.backgroundFile` (the user's choice from Settings)
-
 2. `com.lomiri.Shell` gsettings → `background-picture-uri`
-
 3. Hardcoded default
 
 `AccountsService.backgroundFile` returns a bare path; we prefix it with `file://` before handing it to the Image source.
 
 ### App enumeration
 
-- `AppDrawerModel` from `Lomiri.Launcher 0.1` — the same model the drawer uses.
+- `AppDrawerModel` from `Lomiri.Launcher 0.1` — the same model the drawer uses
+- Wrapped in `AppDrawerProxyModel` from `Utils 0.1` for A–Z sort
+- Tap → `Qt.openUrlExternally("application:///" + model.appId + ".desktop")` → Lomiri's URL dispatcher hands off to UAL
 
-- Wrapped in `AppDrawerProxyModel` from `Utils 0.1` (different plugin, easy to miss) for A–Z sort.
+### Cross-process "Add to HomeSpike"
 
-- Tap → `Qt.openUrlExternally("application:///" + model.appId + ".desktop")` → Lomiri's URL dispatcher hands off to UAL.
+The patched `Drawer.qml`'s long-press context menu writes the appId to `/home/phablet/.config/home-spike/pending-adds.txt`. HomeSpike polls that file roughly every 1.5 seconds and pulls in any new entries. No D-Bus dance — it's a file.
 
 ## Usage
 
 Phone connected via adb, developer mode on:
 
-```
-# fresh install (pushes files, patches Lomiri, reboots)
+```bash
+# fresh install (pushes files, replaces four Lomiri shell files, reboots)
 PIN=<sudo-pin> ./deploy/install.sh
 
-# dev iteration (push QML+wrapper only, kill running instance, no patch, no reboot)
+# dev iteration of HomeSpike code only (no Lomiri shell touch, restarts lomiri)
 PIN=<sudo-pin> ./deploy/refresh.sh
 
-# revert everything (restore Shell.qml.orig, remove files, reboot)
+# dev iteration AND re-push the four Lomiri overrides
+PIN=<sudo-pin> LOMIRI=1 ./deploy/refresh.sh
+
+# revert everything (restore all four .orig files, remove /opt/home-spike, reboot)
 PIN=<sudo-pin> ./deploy/uninstall.sh
 ```
 
-The `PIN` is the same one used for the existing `n100-be2012-crossflash/installer/*.sh` scripts. `adb` is discovered in this order: `$ADB` env override → on PATH → `research/n100-be2012-crossflash/host-tools/`.
+The `PIN` is the same one used for the existing `n100-be2012-crossflash/installer/*.sh` scripts. `adb` is discovered in this order: `$ADB` env override → on `PATH` → `research/n100-be2012-crossflash/host-tools/`.
 
 ## Known limitations / next steps
 
-- **OTA wipes patches.** Re-run `install.sh` after any system update.
-
-- **Long-edge-swipe gesture** — probably aimed at the same target, hasn't been audited.
-
-- **Surface-stack fallback** — if Lomiri ever drops HomeSpike out of the surface stack (memory pressure, crash), the wallpaper shows instead of us. Need to hook the "stack went empty" path to refire `activateApplication`.
-
-- **AppArmor / confinement** — currently running unconfined as a system app (`/opt/...`). When this graduates to real ImGui+Lua we may need a custom apparmor template for widget data access.
-
-- **App launch from cards** — uses `Qt.openUrlExternally("application:///")` which works through the URL dispatcher. If apparmor ever blocks it, the fallback is direct `ApplicationManager.startApplication()` — but that needs more shell-level privileges.
-
-## Patch-site reference (current noble Lomiri)
-
-Line numbers are from the billie2 reference unit at the time of writing; the install script's sed is pattern-based, not line-pinned, so these numbers are for orientation only.
-
-- `Shell.qml ~ line 681` — `onShowDashHome` (BFB target — patched)
-
-- `Shell.qml ~ line 259-261` — `Component.onCompleted` block (autostart insertion point)
-
-- `Shell.qml ~ line 217` — `activateApplication(appId)` function we call into
-
-- `Shell.qml ~ line 552` — `showHome()` (what BFB used to call)
-
-- `Launcher/LauncherPanel.qml ~ line 89-145` — BFB Rectangle + click handler
-
-- QML modules used: `GSettings 1.0`, `AccountsService 0.1`, `Lomiri.Launcher 0.1`, `Utils 0.1`
-
-- Lomiri modules live under `/usr/lib/<arch>-linux-gnu/lomiri/qml/`; the wrapper's glob (`/usr/lib/*-linux-gnu*/lomiri/qml`) makes them visible to our app regardless of arch.
+- **OTA wipes overrides.** Re-run `install.sh` after any system update.
+- **Lomiri restarts log you to the greeter.** Lomiri caches QML aggressively, so iterating on the overrides means `refresh.sh LOMIRI=1` which `pkill`s lomiri — you'll see the greeter, unlock to continue.
+- **No widget API yet.** This release is the home surface itself. A widget system is the next milestone; the current QML is the scaffolding for an eventual ImGui+Lua reimplementation that'll host third-party widgets behind the same load-point.
+- **App launch from cards** uses `Qt.openUrlExternally("application:///")` which works through the URL dispatcher. If AppArmor ever blocks it, the fallback is direct `ApplicationManager.startApplication()` — but that needs more shell-level privileges.
 
 ## Tested devices
 
 | Device            | Codename | Arch    | UT version  | Notes                                                               |
 | ----------------- | -------- | ------- | ----------- | ------------------------------------------------------------------- |
 | OnePlus Nord N100 | billie2  | aarch64 | 24.04 noble | Reference device. Cross-flashed BE2012; see n100-be2012-crossflash. |
-
