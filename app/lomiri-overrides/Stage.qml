@@ -83,6 +83,58 @@ FocusScope {
     // so the BFB rewire in Shell.qml and the home button in Spread.qml can
     // both invoke it without poking the private QtObject.
     function minimizeAllWindows() { priv.minimizeAllWindows(); }
+
+    // HomeSpike: true while the user is on the home surface and no app
+    // should be visible. The wallpaper Loader's z is bound to this so we
+    // can promote HomeSpike to the top of the stage on demand.
+    //
+    // The "minimize all + hope the wallpaper layer shows" approach
+    // doesn't work in staged mode — Lomiri's staged state is built
+    // around always showing exactly one app — so showHome() additionally
+    // raises the wallpaper Loader above the app delegates. The next
+    // time an app gains focus (Connections below), we drop back to -2.
+    property bool homeShown: false
+
+    // Mir's surface focus state lags behind our local focusedAppDelegate
+    // changes (~40ms in practice). When showHome() sets focusedAppDelegate
+    // to null, Mir's onFocusedChanged still fires for the previously
+    // focused window → claimFocus() → focusedAppDelegate is restored →
+    // homeShown gets reset by the watcher below before HomeSpike is even
+    // visible. Snapshot the focused delegate + a short grace window so we
+    // can recognise the echo and ignore it.
+    property var _focusedAtHomeShow: null
+    property bool _inHomeGrace: false
+    Timer {
+        id: _homeGraceTimer
+        interval: 800
+        onTriggered: { root._inHomeGrace = false; root._focusedAtHomeShow = null; }
+    }
+
+    function showHome() {
+        _focusedAtHomeShow = priv.focusedAppDelegate;
+        _inHomeGrace = true;
+        _homeGraceTimer.restart();
+        priv.minimizeAllWindows();
+        priv.focusedAppDelegate = null;
+        homeShown = true;
+    }
+
+    Connections {
+        target: priv
+        function onFocusedAppDelegateChanged() {
+            if (!root.homeShown) return;
+            if (!priv.focusedAppDelegate) return;
+            // Within the grace window, ignore the Mir echo that refocuses
+            // the same delegate that was focused when showHome() ran.
+            if (root._inHomeGrace
+                && priv.focusedAppDelegate === root._focusedAtHomeShow) {
+                return;
+            }
+            // Different delegate focused (user picked another app), or
+            // grace expired (deliberate later re-tap) — drop home.
+            root.homeShown = false;
+        }
+    }
     readonly property var mainApp: priv.focusedAppDelegate ? priv.focusedAppDelegate.application : null
 
     // application windows never rotate independently
@@ -749,12 +801,17 @@ FocusScope {
         // HomeSpike replaces the original Wallpaper element at z=-2.
         // The Loader points at HomeSpike's main.qml (an Item, not a Window).
         // HomeSpike does its own wallpaper rendering inside.
+        //
+        // z dance: normally -2 (true wallpaper layer, under everything).
+        // While root.homeShown, we promote it above any app delegate so
+        // the user actually sees HomeSpike instead of whatever staged-
+        // mode insists on rendering. Demoted again when an app focuses.
         Loader {
             id: wallpaper
             objectName: "homeSpikeBackground"
             anchors.fill: parent
             source: "file:///opt/home-spike/main.qml"
-            z: -2
+            z: root.homeShown ? 9999 : -2
             onStatusChanged: {
                 if (status === Loader.Error) {
                     console.error("HomeSpike: failed to load main.qml — " + sourceComponent.errorString());
@@ -841,12 +898,10 @@ FocusScope {
                 appRepeater.itemAt(highlightedIndex).close();
             }
 
-            // HomeSpike: home button in the spread minimises all running
-            // apps so the HomeSpike background layer (loaded at z=-2) is
-            // revealed.
-            onHomeRequested: {
-                priv.minimizeAllWindows();
-            }
+            // HomeSpike: home button in the spread → call showHome() so
+            // the wallpaper Loader is promoted on top AND focus state is
+            // cleared. See root.showHome() for the architectural reason.
+            onHomeRequested: root.showHome()
 
             FloatingFlickable {
                 id: floatingFlickable
@@ -1749,7 +1804,14 @@ FocusScope {
                         }
                     },
                     State {
-                        name: "staged"; when: root.state == "staged"
+                        // HomeSpike: added `&& !appDelegate.minimized` so
+                        // that minimising an app on phone actually hides
+                        // it. Upstream's "staged" state has no minimized
+                        // guard (unlike "maximized"/"fullscreen" below),
+                        // which meant minimised apps stayed full-size on
+                        // top of the HomeSpike layer — BFB + spread-home
+                        // appeared to do nothing.
+                        name: "staged"; when: root.state == "staged" && !appDelegate.minimized
                         PropertyChanges {
                             target: appDelegate
                             x: stageMaths.itemX
@@ -1781,7 +1843,8 @@ FocusScope {
                         }
                     },
                     State {
-                        name: "stagedWithSideStage"; when: root.state == "stagedWithSideStage"
+                        // HomeSpike: same minimized guard as "staged" above.
+                        name: "stagedWithSideStage"; when: root.state == "stagedWithSideStage" && !appDelegate.minimized
                         PropertyChanges {
                             target: stageMaths
                             itemIndex: index

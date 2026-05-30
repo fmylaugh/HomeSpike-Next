@@ -681,7 +681,13 @@ StyledItem {
             // HomeSpike: when HomeSpike's own dock is enabled, force the
             // panel collapsed — the dock owns the bottom-edge launcher row,
             // so leaving the panel locked open just covers the home grid.
-            lockedVisible: (lockedByUser || shell.atDesktop) && lockAllowed && !(stage && stage.homeSpikeDockEnabled)
+            //
+            // Also OR-in stage.homeShown so the launcher panel shows when
+            // HomeSpike is promoted to the top via BFB/spread-home, just
+            // like it does when the device is naturally at desktop. Without
+            // this, atDesktop is false (apps exist in topLevelSurfaceList,
+            // just minimised) and the launcher disappears.
+            lockedVisible: (lockedByUser || shell.atDesktop || (stage && stage.homeShown)) && lockAllowed && !(stage && stage.homeSpikeDockEnabled)
             blurSource: settings.enableBlur ? (greeter.shown ? greeter : stages) : null
             topPanelHeight: panel.panelHeight
             lightMode: shell.lightMode
@@ -703,7 +709,11 @@ StyledItem {
             // HomeSpike: BFB (Ubuntu logo) minimises all running apps so
             // the HomeSpike background layer is revealed. The drawer is
             // still reachable via the long-edge-swipe.
-            onShowDashHome: stage.minimizeAllWindows()
+            // HomeSpike: BFB → showHome() (not minimizeAllWindows) so the
+            // wallpaper Loader is promoted to the top of the stage. Plain
+            // minimize alone fails in staged mode where one app is always
+            // rendered full-size. See stage.showHome() for details.
+            onShowDashHome: stage.showHome()
             onLauncherApplicationSelected: {
                 greeter.notifyUserRequestedApp();
                 shell.activateApplication(appId);
