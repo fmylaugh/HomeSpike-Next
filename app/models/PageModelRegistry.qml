@@ -92,15 +92,21 @@ Item {
      * pageCount. When trimming, the active-mode lists from overflow pages
      * merge into the active-mode list of the last kept page; the other
      * modes' overflow lists are dropped (they were already invisible).
+     *
+     * Also seeds the active mode's per-page slot from autoFill (or snap)
+     * the FIRST time it's visited — so switching to a mode you've never
+     * used doesn't drop you on a blank page. Once seeded, persistOrder
+     * will write the current arrangement back into that slot, and future
+     * switches restore it instead of re-seeding.
      */
     function _normalisedPageData() {
         var pageData = persist.readPageData();
         var pc = Math.min(Math.max(1, persist.pageCount), maxPages);
+        var mode = persist.placementMode;
         while (pageData.length < pc) {
             pageData.push({ autoFill: [], snap: [], free: [] });
         }
         if (pageData.length > pc) {
-            var mode = persist.placementMode;
             var overflow = [];
             for (var z = pc; z < pageData.length; ++z) {
                 var src = pageData[z][mode] || [];
@@ -109,7 +115,57 @@ Item {
             pageData = pageData.slice(0, pc);
             pageData[pc - 1][mode] = (pageData[pc - 1][mode] || []).concat(overflow);
         }
+        for (var p = 0; p < pc; ++p) {
+            _seedEmptyModeSlot(pageData[p], mode);
+        }
         return pageData;
+    }
+
+    /**
+     * If bag[mode] is empty but bag.autoFill (or snap) has entries, copy
+     * them in with default mode-appropriate positions. No-op when bag[mode]
+     * already has data — preserves whatever the user arranged last time.
+     */
+    function _seedEmptyModeSlot(bag, mode) {
+        if (bag[mode] && bag[mode].length > 0) return;
+        var seedIds = [];
+        if (bag.autoFill && bag.autoFill.length > 0) {
+            seedIds = bag.autoFill.slice();
+        } else if (bag.snap && bag.snap.length > 0) {
+            for (var i = 0; i < bag.snap.length; ++i) {
+                if (bag.snap[i] && bag.snap[i].appId) seedIds.push(bag.snap[i].appId);
+            }
+        } else if (bag.free && bag.free.length > 0) {
+            for (var j = 0; j < bag.free.length; ++j) {
+                if (bag.free[j] && bag.free[j].appId) seedIds.push(bag.free[j].appId);
+            }
+        }
+        if (seedIds.length === 0) return;
+        bag[mode] = _buildEntriesForMode(seedIds, mode);
+    }
+
+    /**
+     * Lay out a list of appIds in a shape valid for `mode`. autoFill is a
+     * bare array; snap/free assign default positions on a 4-column grid.
+     */
+    function _buildEntriesForMode(appIds, mode) {
+        var out = [];
+        for (var i = 0; i < appIds.length; ++i) {
+            if (mode === "autoFill") {
+                out.push(appIds[i]);
+            } else if (mode === "snap") {
+                out.push({ appId: appIds[i], col: i % cols, row: Math.floor(i / cols) });
+            } else if (mode === "free") {
+                var c = i % cols;
+                var r = Math.floor(i / cols);
+                out.push({
+                    appId: appIds[i],
+                    xFrac: (c + 0.5) / cols,
+                    yFrac: Math.min(0.92, (r + 0.5) / 8)
+                });
+            }
+        }
+        return out;
     }
 
     /**
@@ -210,18 +266,28 @@ Item {
     }
 
     /**
-     * Build a ListModel row with the uniform shape. Sentinel -1 means the
-     * field isn't meaningful in the current placement mode.
+     * Build a ListModel row with the uniform shape.
+     *
+     * IMPORTANT: ListModel infers each role's type from the FIRST appended
+     * value and locks it. If we initialise xFrac/yFrac to -1 (an integer),
+     * the role becomes int and later `setProperty(idx, "xFrac", 0.567)`
+     * silently truncates to 0 — which makes free-mode placement quantise
+     * to whole xFrac values (i.e. it looks like a snap-to-grid). We use a
+     * non-integer sentinel (-0.5) for the "unset" case so the role is real
+     * from the start. The renderer's `model.xFrac >= 0` check is unchanged
+     * since -0.5 < 0 still reads as "unset".
      */
     function _makeRow(srcApp, col, rowI, xFrac, yFrac) {
+        var xf = (typeof xFrac === "number" && xFrac >= 0) ? xFrac : -0.5;
+        var yf = (typeof yFrac === "number" && yFrac >= 0) ? yFrac : -0.5;
         return {
             appId: srcApp.appId,
             name:  srcApp.name,
             icon:  srcApp.icon,
             col:   col,
             row:   rowI,
-            xFrac: xFrac,
-            yFrac: yFrac
+            xFrac: xf,
+            yFrac: yf
         };
     }
 

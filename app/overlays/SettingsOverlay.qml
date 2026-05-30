@@ -27,6 +27,9 @@ Rectangle {
     /** Current dock background height in grid units (bound to persist.dockBgHeight). */
     property real dockBgHeight: 12.0
 
+    /** Current tile placement mode (bound to persist.placementMode). */
+    property string placementMode: "autoFill"
+
     /** Emitted when the user changes the page count via +/-. */
     signal pageCountAdjusted(int newCount)
 
@@ -35,6 +38,9 @@ Rectangle {
 
     /** Emitted as the user drags the dock-height slider. */
     signal dockBgHeightAdjusted(real newGu)
+
+    /** Emitted when the user picks a different layout mode. */
+    signal placementModeAdjusted(string newMode)
 
     /** Px width of the Lomiri launcher panel currently overlapping us.
      *  We shift the dialog box right by half this so it stays centered in
@@ -140,6 +146,80 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     onCheckedChanged: {
                         if (checked !== root.dockEnabled) root.dockToggled(checked);
+                    }
+                }
+            }
+
+            // ---- Layout mode selector ----
+            Column {
+                width: parent.width
+                spacing: units.gu(0.5)
+                Label { text: "Layout"; color: "white" }
+                Label {
+                    text: "How icons are placed. Switching modes saves your current layout, so you can flip back without losing it."
+                    color: "#9fa9c0"
+                    fontSize: "small"
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                }
+                Column {
+                    width: parent.width
+                    spacing: units.gu(0.5)
+                    Repeater {
+                        model: [
+                            { key: "autoFill", title: "Auto-fill",     blurb: "Icons flow left to right, no gaps." },
+                            { key: "snap",     title: "Snap to grid",  blurb: "Place icons on any grid cell; gaps OK." },
+                            { key: "free",     title: "Place anywhere", blurb: "No grid; icons go anywhere you drop them." }
+                        ]
+                        delegate: Rectangle {
+                            width: parent.width
+                            height: optRow.implicitHeight + units.gu(1.5)
+                            radius: units.gu(1)
+                            color: root.placementMode === modelData.key ? "#3d5af1" : "#1d2540"
+                            border.color: root.placementMode === modelData.key ? "white" : "#3a456a"
+                            border.width: 1
+                            Behavior on color { ColorAnimation { duration: 120 } }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (modelData.key !== root.placementMode) {
+                                        root.placementModeAdjusted(modelData.key);
+                                    }
+                                }
+                            }
+                            Row {
+                                id: optRow
+                                anchors {
+                                    left: parent.left; right: parent.right
+                                    verticalCenter: parent.verticalCenter
+                                    leftMargin: units.gu(1.5); rightMargin: units.gu(1.5)
+                                }
+                                spacing: units.gu(1)
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: units.gu(1.4); height: width
+                                    radius: width / 2
+                                    color: root.placementMode === modelData.key ? "white" : "transparent"
+                                    border.color: "white"
+                                    border.width: 1
+                                }
+                                Column {
+                                    width: parent.width - units.gu(2.4)
+                                    Label {
+                                        text: modelData.title
+                                        color: "white"
+                                        font.bold: true
+                                    }
+                                    Label {
+                                        text: modelData.blurb
+                                        color: "#cad2e8"
+                                        fontSize: "small"
+                                        wrapMode: Text.WordWrap
+                                        width: parent.width
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -54,6 +54,20 @@ Item {
     property string sourceName:  ""
     property string sourceIcon:  ""
 
+    // Pre-drag positional snapshot, captured at startDrag. Used by snap
+    // mode to resolve cell collisions on release (the displaced tile is
+    // sent to the source's previous cell — i.e. swap, not overwrite).
+    property int  sourcePrevCol:   -1
+    property int  sourcePrevRow:   -1
+    property real sourcePrevXFrac: -1
+    property real sourcePrevYFrac: -1
+
+    // Most recent drag point in DragController-local coordinates. Used by
+    // free-mode cross-page carries so the dragged tile lands somewhere
+    // useful on the new page rather than at (0, 0).
+    property real lastDragX: 0
+    property real lastDragY: 0
+
     z: 300
     anchors.fill: parent
 
@@ -85,15 +99,50 @@ Item {
     }
 
     function _carryToPage(targetPage) {
-        var item = {
-            appId: sourceAppId,
-            name:  sourceName,
-            icon:  sourceIcon
-        };
+        var item = _newGridRowForCurrentMode(targetPage);
         pages.pageModels[sourcePage].remove(sourceIndex, 1);
         pages.pageModels[targetPage].append(item);
         sourcePage = targetPage;
         sourceIndex = pages.pageModels[targetPage].count - 1;
+    }
+
+    /**
+     * Build a row payload for an append into pages.pageModels[targetPage]
+     * that's appropriate for the active placement mode. autoFill ignores
+     * position fields (delegate reads `index`); snap picks the first free
+     * cell on the target page; free uses the current drag point converted
+     * to xFrac/yFrac on the target page.
+     */
+    function _newGridRowForCurrentMode(targetPage) {
+        var mode = persist.placementMode;
+        // -0.5 sentinel (not -1) keeps the ListModel role typed as real —
+        // see PageModelRegistry._makeRow for the full reasoning.
+        var item = {
+            appId: sourceAppId,
+            name:  sourceName,
+            icon:  sourceIcon,
+            col:   -1,
+            row:   -1,
+            xFrac: -0.5,
+            yFrac: -0.5
+        };
+        if (mode === "snap") {
+            var c = pages.firstFreeCell(targetPage);
+            item.col = c.col;
+            item.row = c.row;
+        } else if (mode === "free") {
+            // lastDrag is in DragController-local; translate to pagesView-
+            // local (matches pageDelegate-local for the visible page) so
+            // the carried tile lands where the user's finger actually is.
+            var lp = _toPagesViewLocal(lastDragX, lastDragY);
+            var w = Math.max(1, pagesView.width);
+            var h = Math.max(1, pagesView.height);
+            var xf = Math.min(0.95, Math.max(0.05, lp.x / w));
+            var yf = Math.min(0.95, Math.max(0.05, lp.y / h));
+            item.xFrac = xf;
+            item.yFrac = yf;
+        }
+        return item;
     }
 
     // ============================================================
@@ -119,6 +168,21 @@ Item {
         sourceAppId = appId;
         sourceName = name;
         sourceIcon = icon;
+        // Snapshot the pre-drag positional fields so snap-mode collision
+        // resolution can swap (give the displaced tile our old cell)
+        // instead of overwriting. Safe to read on dock rows too; sentinels.
+        if (loc.container === "grid") {
+            var r = pages.pageModels[loc.page].get(loc.index);
+            sourcePrevCol   = (typeof r.col   === "number") ? r.col   : -1;
+            sourcePrevRow   = (typeof r.row   === "number") ? r.row   : -1;
+            sourcePrevXFrac = (typeof r.xFrac === "number") ? r.xFrac : -1;
+            sourcePrevYFrac = (typeof r.yFrac === "number") ? r.yFrac : -1;
+        } else {
+            sourcePrevCol = -1; sourcePrevRow = -1;
+            sourcePrevXFrac = -1; sourcePrevYFrac = -1;
+        }
+        lastDragX = x;
+        lastDragY = y;
         floatingIcon.x = x - floatingIcon.width / 2;
         floatingIcon.y = y - floatingIcon.height / 2;
     }
@@ -132,6 +196,8 @@ Item {
         if (!dragging || sourceContainer === "") return;
         if (!_relocateSource()) return;
 
+        lastDragX = x;
+        lastDragY = y;
         floatingIcon.x = x - floatingIcon.width / 2;
         floatingIcon.y = y - floatingIcon.height / 2;
 
@@ -142,16 +208,25 @@ Item {
     }
 
     /**
-     * Finalise the drag. Persist any reordering that happened, clear state.
+     * Finalise the drag. Snap-mode collision resolution happens here (so
+     * the swap only fires once, on release, instead of jittering mid-drag).
+     * Persists the result.
      */
     function endDrag() {
         edgeFlipTimer.stop();
         edgeFlipTimer.direction = 0;
         targetingDock = false;
-        if (sourceIndex >= 0) pages.persistOrder();
+        if (sourceIndex >= 0) {
+            if (sourceContainer === "grid" && persist.placementMode === "snap") {
+                _snapResolveCollision();
+            }
+            pages.persistOrder();
+        }
         sourceIndex = -1;
         sourcePage  = -1;
         sourceContainer = "";
+        sourcePrevCol = -1; sourcePrevRow = -1;
+        sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
 
     /**
@@ -167,6 +242,8 @@ Item {
         sourcePage  = -1;
         sourceContainer = "";
         sourceAppId = "";
+        sourcePrevCol = -1; sourcePrevRow = -1;
+        sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
 
     // ============================================================
@@ -245,70 +322,148 @@ Item {
         pages.dockApps.append({
             appId: sourceAppId,
             name:  sourceName,
-            icon:  sourceIcon
+            icon:  sourceIcon,
+            col:   -1, row: -1, xFrac: -0.5, yFrac: -0.5
         });
         sourceContainer = "dock";
         sourcePage = -1;
         sourceIndex = pages.dockApps.count - 1;
     }
 
+    /**
+     * Drop-over-grid dispatch. Branches by placementMode AND source
+     * container (dock vs grid).
+     */
     function _handleOverGrid(x, y) {
         targetingDock = false;
-        var target = _computeGridTarget(x, y);
-        if (target < 0) return;
-
         if (sourceContainer === "dock") {
             _moveDockToGrid();
-        } else if (sourceContainer === "grid") {
-            _reorderInPage(target);
+            return;
+        }
+        if (sourceContainer !== "grid") return;
+
+        var mode = persist.placementMode;
+        if (mode === "autoFill")    _autoFillReorder(x, y);
+        else if (mode === "snap")   _snapMoveSource(x, y);
+        else                        _freeMoveSource(x, y);
+    }
+
+    // --- autoFill: live-reorder the model by index (existing behavior) ---
+    function _autoFillReorder(x, y) {
+        var target = _computeGridCellIndex(x, y);
+        if (target < 0) return;
+        var pageModel = pages.pageModels[sourcePage];
+        if (target >= pageModel.count) target = pageModel.count - 1;
+        if (target !== sourceIndex) {
+            pageModel.move(sourceIndex, target, 1);
+            sourceIndex = target;
+        }
+    }
+
+    // --- snap: move source row's (col,row) to the cell under the cursor.
+    // Overlap is allowed during the drag (visually fine — source is
+    // opacity:0); collision is resolved on release in _snapResolveCollision.
+    function _snapMoveSource(x, y) {
+        var cell = _computeGridCell(x, y);
+        if (!cell) return;
+        var m = pages.pageModels[sourcePage];
+        var r = m.get(sourceIndex);
+        if (r.col !== cell.col) m.setProperty(sourceIndex, "col", cell.col);
+        if (r.row !== cell.row) m.setProperty(sourceIndex, "row", cell.row);
+    }
+
+    // --- free: continuously write xFrac/yFrac so the tile follows finger.
+    function _freeMoveSource(x, y) {
+        var p = _toPagesViewLocal(x, y);
+        var w = Math.max(1, pagesView.width);
+        var h = Math.max(1, pagesView.height);
+        var xf = Math.min(0.98, Math.max(0.02, p.x / w));
+        var yf = Math.min(0.98, Math.max(0.02, p.y / h));
+        var m = pages.pageModels[sourcePage];
+        m.setProperty(sourceIndex, "xFrac", xf);
+        m.setProperty(sourceIndex, "yFrac", yf);
+    }
+
+    /**
+     * Translate DragController-local (x,y) — which equal root-local since
+     * DragController fills the root Item — into pagesView-local coords.
+     * pagesView is offset from root by (leftReserve, topMargin) via its
+     * anchor margins; the renderer expects coords in pageDelegate-local
+     * which match pagesView-local for the visible page.
+     */
+    function _toPagesViewLocal(x, y) {
+        return { x: x - pagesView.x, y: y - pagesView.y };
+    }
+
+    // --- snap collision swap (fires at endDrag, never mid-drag).
+    function _snapResolveCollision() {
+        if (sourcePage < 0 || sourceIndex < 0) return;
+        var m = pages.pageModels[sourcePage];
+        if (sourceIndex >= m.count) return;
+        var src = m.get(sourceIndex);
+        for (var i = 0; i < m.count; ++i) {
+            if (i === sourceIndex) continue;
+            var r = m.get(i);
+            if (r.col === src.col && r.row === src.row) {
+                // Displace the occupant into source's pre-drag cell (swap).
+                m.setProperty(i, "col", sourcePrevCol);
+                m.setProperty(i, "row", sourcePrevRow);
+                return;
+            }
         }
     }
 
     /**
-     * Convert a Window-space (x,y) into a target cell index on the current
-     * page. Accounts for the GridView's left/right anchor margins.
-     * Returns -1 if the point is above the grid area.
+     * Convert DragController-space (x,y) into a target cell INDEX on the
+     * current page (autoFill mode). Returns -1 if above the grid area.
      */
-    function _computeGridTarget(x, y) {
+    function _computeGridCellIndex(x, y) {
+        var cell = _computeGridCell(x, y);
+        if (!cell) return -1;
+        return cell.row * pages.cols + cell.col;
+    }
+
+    /**
+     * Convert DragController-space (x,y) into a {col, row} cell on the
+     * current page. Returns null if above the grid.
+     */
+    function _computeGridCell(x, y) {
+        var p = _toPagesViewLocal(x, y);
         var leftMargin = units.gu(1);
-        var topMargin  = units.gu(5);            // pagesView.topMargin
         var gridWidth  = pagesView.width - 2 * leftMargin;
         var cellH      = units.gu(11);
-        var cols       = 4;
-        var cellW      = gridWidth / cols;
+        var cellW      = gridWidth / pages.cols;
 
-        var pageX = x - leftMargin;
-        var pageY = y - topMargin;
-        if (pageY < 0) return -1;
+        var pageX = p.x - leftMargin;
+        var pageY = p.y;
+        if (pageY < 0) return null;
         if (pageX < 0) pageX = 0;
         if (pageX >= gridWidth) pageX = gridWidth - 1;
 
         var col = Math.floor(pageX / cellW);
         var row = Math.floor(pageY / cellH);
         if (col < 0) col = 0;
-        if (col >= cols) col = cols - 1;
-        return row * cols + col;
+        if (col >= pages.cols) col = pages.cols - 1;
+        if (row < 0) row = 0;
+        return { col: col, row: row };
     }
 
     function _moveDockToGrid() {
         var dropPage = pagesView.currentPage;
         if (dropPage < 0 || dropPage >= persist.pageCount) return;
-        var item = { appId: sourceAppId, name: sourceName, icon: sourceIcon };
+        var item = _newGridRowForCurrentMode(dropPage);
         pages.dockApps.remove(sourceIndex, 1);
         pages.pageModels[dropPage].append(item);
         sourceContainer = "grid";
         sourcePage = dropPage;
         sourceIndex = pages.pageModels[dropPage].count - 1;
-    }
-
-    function _reorderInPage(target) {
-        var pageModel = pages.pageModels[sourcePage];
-        if (target < 0) target = 0;
-        if (target >= pageModel.count) target = pageModel.count - 1;
-        if (target !== sourceIndex) {
-            pageModel.move(sourceIndex, target, 1);
-            sourceIndex = target;
-        }
+        // Snapshot the new prev-cell so subsequent snap collision resolves
+        // consistently if the user keeps dragging across cells.
+        var rr = pages.pageModels[dropPage].get(sourceIndex);
+        sourcePrevCol   = rr.col;
+        sourcePrevRow   = rr.row;
+        sourcePrevXFrac = rr.xFrac;
+        sourcePrevYFrac = rr.yFrac;
     }
 
     // ============================================================

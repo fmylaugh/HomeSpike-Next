@@ -124,31 +124,85 @@ Item {
         // Index of currently centered page (for indicators + drag drop target)
         property int currentPage: Math.round(contentX / Math.max(1, width))
 
+        // Shared grid geometry — used for autoFill + snap rendering AND
+        // by DragController to translate a drop point into (col,row).
+        readonly property real gridLeftMargin: units.gu(1)
+        readonly property real gridRightMargin: units.gu(1)
+        readonly property real cellH: units.gu(11)
+        readonly property real tileW: units.gu(9)
+        readonly property real tileH: units.gu(11)
+
         delegate: Item {
+            id: pageDelegate
             width: pagesView.width
             height: pagesView.height
             property int pageIndex: index
+            readonly property real cellW: (width - pagesView.gridLeftMargin - pagesView.gridRightMargin) / pages.cols
 
-            GridView {
-                anchors {
-                    fill: parent
-                    leftMargin: units.gu(1); rightMargin: units.gu(1)
-                }
-                cellWidth: width / 4
-                cellHeight: units.gu(11)
-                model: pages.pageModels[pageIndex]
-                interactive: !dragController.dragging
-                clip: true
-
-                move:          Transition { NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic } }
-                moveDisplaced: Transition { NumberAnimation { properties: "x,y"; duration: 180; easing.type: Easing.OutCubic } }
-
+            // One Repeater drives all three placement modes — only the
+            // x/y bindings differ based on persist.placementMode.
+            Repeater {
+                id: tileRepeater
+                model: pages.pageModels[pageDelegate.pageIndex]
                 delegate: Item {
-                    width: GridView.view.cellWidth
-                    height: GridView.view.cellHeight
+                    id: tileWrap
+                    width: pagesView.tileW
+                    height: pagesView.tileH
+
+                    // Read positional roles ourselves so the binding can
+                    // switch source field when placementMode changes.
+                    readonly property string mode: persist.placementMode
+                    x: {
+                        if (mode === "autoFill") {
+                            return pagesView.gridLeftMargin
+                                 + (index % pages.cols) * pageDelegate.cellW
+                                 + (pageDelegate.cellW - width) / 2;
+                        }
+                        if (mode === "snap") {
+                            var c = model.col >= 0 ? model.col : 0;
+                            return pagesView.gridLeftMargin
+                                 + c * pageDelegate.cellW
+                                 + (pageDelegate.cellW - width) / 2;
+                        }
+                        // free — values <= 0.001 are treated as "unset"
+                        // (covers both the -0.5 sentinel and stale rows
+                        // truncated to 0 by older builds' int-typed roles).
+                        var f = (model.xFrac > 0.001) ? model.xFrac : 0.5;
+                        return f * pageDelegate.width - width / 2;
+                    }
+                    y: {
+                        if (mode === "autoFill") {
+                            return Math.floor(index / pages.cols) * pagesView.cellH;
+                        }
+                        if (mode === "snap") {
+                            var r = model.row >= 0 ? model.row : 0;
+                            return r * pagesView.cellH;
+                        }
+                        // free — see x binding for the > 0.001 reasoning.
+                        var f = (model.yFrac > 0.001) ? model.yFrac : 0.5;
+                        return f * pageDelegate.height - height / 2;
+                    }
+                    // Smooth re-flow when models reorder or modes change.
+                    // Disabled while THIS tile is being dragged so it
+                    // doesn't fight the floating-icon visual.
+                    Behavior on x {
+                        enabled: !(dragController.dragging
+                                   && dragController.sourceContainer === "grid"
+                                   && dragController.sourcePage === pageDelegate.pageIndex
+                                   && dragController.sourceIndex === index)
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on y {
+                        enabled: !(dragController.dragging
+                                   && dragController.sourceContainer === "grid"
+                                   && dragController.sourcePage === pageDelegate.pageIndex
+                                   && dragController.sourceIndex === index)
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+
                     opacity: (dragController.dragging
                               && dragController.sourceContainer === "grid"
-                              && dragController.sourcePage === pageIndex
+                              && dragController.sourcePage === pageDelegate.pageIndex
                               && dragController.sourceIndex === index) ? 0.0 : 1.0
 
                     TileBody {
@@ -157,7 +211,7 @@ Item {
                         appName: model.name
                         iconSrc: model.icon
                         container: "grid"
-                        sourcePage: pageIndex
+                        sourcePage: pageDelegate.pageIndex
                         indexInModel: index
                         editMode: root.editMode
                         controller: dragController
@@ -294,10 +348,14 @@ Item {
         maxPages: pages.maxPages
         dockEnabled: persist.dockEnabled
         dockBgHeight: persist.dockBgHeight
+        placementMode: persist.placementMode
         leftReserve: root.leftReserve
         onPageCountAdjusted: (n) => pages.setPageCount(n)
         onDockToggled: (on) => pages.toggleDock(on)
         onDockBgHeightAdjusted: (gu) => persist.dockBgHeight = gu
+        // PageModelRegistry's Connections watcher catches the persist
+        // change and re-renders from the new mode's saved slot.
+        onPlacementModeAdjusted: (mode) => persist.placementMode = mode
     }
 
     ConfirmRemoveOverlay {
