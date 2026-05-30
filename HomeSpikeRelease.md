@@ -1,5 +1,7 @@
 # HomeSpike v1.0.1 — a real home screen for Ubuntu Touch
 
+**Source / install:** <https://github.com/TeamIDE/HomeSpikev1> · Releases: `v1.0.0`, `v1.0.1` · License: GPL-2.0-or-later
+
 > Title for the post — pick whichever fits the venue:
 >
 > **UBports forum:** `[Release] HomeSpike v1.0 — a real home screen for Ubuntu Touch (multi-page, dock, drag-to-reorder, three placement modes, true multitasking)`

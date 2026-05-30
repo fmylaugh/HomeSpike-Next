@@ -1,5 +1,7 @@
 # HomeSpike
 
+**Source / install:** <https://github.com/TeamIDE/HomeSpikev1>
+
 > A [TeamIDE](https://teamide.dev) project. If this changed how you use your phone, [chip in](https://teamide.dev/support).
 
 Join the community on [Discord](https://discord.gg/YVcsHXSCYG) · Follow on [X](https://x.com/TeamIDElab) · Subreddit: [r/TeamIDELabs](https://www.reddit.com/r/TeamIDELabs/) · YouTube: [@TeamIDElabs](https://www.youtube.com/@TeamIDElabs).
