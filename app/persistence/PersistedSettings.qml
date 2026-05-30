@@ -17,6 +17,11 @@ Item {
 
     Settings {
         id: store
+        // Pinned filename: now that HomeSpike runs inside the lomiri process
+        // (Option A — see CLAUDE memory), the default Qt.labs.Settings file
+        // would be ~/.config/lomiri/lomiri.conf and our state would mix with
+        // Lomiri's. Keep our own file separate.
+        fileName: "/home/phablet/.config/home-spike/home-spike.conf"
         category: "homeSpike"
         // pageData is a JSON array of arrays of appIds, one inner array per page.
         property string pageData:     '[[]]'

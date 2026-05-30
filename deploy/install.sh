@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # @file install.sh
 # @description Full HomeSpike install. Pushes the app tree to /opt/home-spike/,
-#   replaces /usr/share/lomiri/Launcher/Drawer.qml with our patched copy,
-#   sed-patches /usr/share/lomiri/Shell.qml for BFB-rewire + autostart,
-#   creates the cross-process inbox file, and reboots. Idempotent — safe
-#   to re-run after a Lomiri OTA to reapply every change.
+#   backs up every Lomiri UI file we modify as .orig, and replaces it with
+#   our copy from app/lomiri-overrides/. No sed surgery — `ls app/lomiri-
+#   overrides/` lists every system file HomeSpike touches.
+#
+#   Reboots when done. Idempotent: re-run safely after a Lomiri OTA to
+#   reapply every change.
 #
 # @status Stable. Tested on OnePlus Nord N100 (billie2) UT 24.04 noble.
 # @issues Hardcodes /home/phablet — assumes the standard UT user. Adjust
@@ -37,53 +39,53 @@ echo "[2/4] Pushing app tree to /tmp/home-spike-staging..."
 "$ADB" shell "rm -rf /tmp/home-spike-staging" >/dev/null
 "$ADB" push "$REPO_ROOT/app" /tmp/home-spike-staging >/dev/null
 
-echo "[3/4] Remount rw, install app tree, patch Shell.qml + Drawer.qml..."
+echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
 "$ADB" shell "echo '$PIN' | sudo -S sh -c '
   set -e
   mount -o remount,rw /
 
   # ----- HomeSpike app: sync whole tree into /opt/home-spike/ -----
+  #       HomeSpike runs inside the lomiri process (loaded by Stage.qml
+  #       at z=-2). No .desktop, no standalone wrapper.
   rm -rf /opt/home-spike
   mkdir -p /opt/home-spike
-  # Move the app tree, then lift out files that live elsewhere on the system.
   mv /tmp/home-spike-staging/* /opt/home-spike/
-  mv /opt/home-spike/home-spike.desktop /usr/share/applications/home-spike.desktop
-  chmod 755 /opt/home-spike/home-spike
   chmod -R u=rwX,go=rX /opt/home-spike
-  chmod 644 /usr/share/applications/home-spike.desktop
+  # Clean up artifacts from older standalone-app installs.
+  rm -f /usr/share/applications/home-spike.desktop
 
-  # ----- Shell.qml: BFB rewire + autostart -----
+  # ----- Lomiri overrides: backup-and-replace each system QML file -----
+  # Shell.qml: BFB rewire + autostart HomeSpike at shell startup
   test -f /usr/share/lomiri/Shell.qml.orig || cp /usr/share/lomiri/Shell.qml /usr/share/lomiri/Shell.qml.orig
-  sed -i \"s|onShowDashHome: showHome()|onShowDashHome: shell.activateApplication(\\\"home-spike\\\")|\" /usr/share/lomiri/Shell.qml
-  if ! grep -q HOME_SPIKE_AUTOSTART /usr/share/lomiri/Shell.qml; then
-    sed -i \"/finishStartUpTimer\\.start();/a\\        shell.activateApplication(\\\"home-spike\\\"); // HOME_SPIKE_AUTOSTART\" /usr/share/lomiri/Shell.qml
-  fi
+  cp /opt/home-spike/lomiri-overrides/Shell.qml /usr/share/lomiri/Shell.qml
+  chmod 644 /usr/share/lomiri/Shell.qml
 
-  # ----- Drawer.qml: long-press → context menu → add to HomeSpike -----
+  # Drawer.qml: long-press → context menu → add to HomeSpike
   test -f /usr/share/lomiri/Launcher/Drawer.qml.orig || cp /usr/share/lomiri/Launcher/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml.orig
   cp /opt/home-spike/lomiri-overrides/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml
   chmod 644 /usr/share/lomiri/Launcher/Drawer.qml
 
-  # ----- Spread.qml: home button in the right-swipe task switcher -----
+  # Spread.qml: home button in the right-swipe task switcher
   test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig || cp /usr/share/lomiri/Stage/Spread/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml.orig
   cp /opt/home-spike/lomiri-overrides/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml
   chmod 644 /usr/share/lomiri/Stage/Spread/Spread.qml
 
-  # ----- Stage.qml: bind Spread.active so the home button only renders
-  #       during the right-swipe (spread or peek). Always re-applied.
-  sed -i \"/HOME_SPIKE_SPREAD_ACTIVE/d\" /usr/share/lomiri/Stage/Stage.qml
-  sed -i \"/objectName: \\\"spreadItem\\\"/a\\            active: root.spreadShown || (root.state \\&\\& root.state.indexOf(\\\"RightEdge\\\") >= 0); /* HOME_SPIKE_SPREAD_ACTIVE */\" /usr/share/lomiri/Stage/Stage.qml
+  # Stage.qml: spread.active binding + hide HomeSpike card in spread
+  test -f /usr/share/lomiri/Stage/Stage.qml.orig || cp /usr/share/lomiri/Stage/Stage.qml /usr/share/lomiri/Stage/Stage.qml.orig
+  cp /opt/home-spike/lomiri-overrides/Stage.qml /usr/share/lomiri/Stage/Stage.qml
+  chmod 644 /usr/share/lomiri/Stage/Stage.qml
 
   # ----- Inbox file used by Drawer→HomeSpike IPC -----
   mkdir -p /home/phablet/.config/home-spike
   touch /home/phablet/.config/home-spike/pending-adds.txt
   chown -R phablet:phablet /home/phablet/.config/home-spike
 
-  echo --- BFB patch ---
-  grep -n onShowDashHome /usr/share/lomiri/Shell.qml
-  echo --- autostart patch ---
-  grep -n -A1 finishStartUpTimer /usr/share/lomiri/Shell.qml
-  echo --- app tree installed ---
+  echo --- overrides installed ---
+  for f in Shell.qml Launcher/Drawer.qml Stage/Spread/Spread.qml Stage/Stage.qml; do
+    if [ -f /usr/share/lomiri/$f.orig ]; then
+      echo "  /usr/share/lomiri/$f -- backup at .orig"
+    fi
+  done
   ls /opt/home-spike/
   mount -o remount,ro /
 '"

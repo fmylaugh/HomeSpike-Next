@@ -27,6 +27,11 @@ Rectangle {
     /** Emitted when the user taps Remove. */
     signal confirmed(string appId)
 
+    /** Px width of the Lomiri launcher panel currently overlapping us.
+     *  Shifts the card right so it stays centered in the visible content
+     *  area instead of slipping under the panel. */
+    property real leftReserve: 0
+
     anchors.fill: parent
     z: 1000
     visible: false
@@ -49,7 +54,8 @@ Rectangle {
 
     Rectangle {
         anchors.centerIn: parent
-        width: Math.min(parent.width * 0.85, units.gu(50))
+        anchors.horizontalCenterOffset: root.leftReserve / 2
+        width: Math.min((parent.width - root.leftReserve) * 0.85, units.gu(50))
         height: cardCol.height + units.gu(4)
         radius: units.gu(2)
         color: "#262d4d"

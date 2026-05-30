@@ -36,6 +36,11 @@ Rectangle {
     /** Emitted as the user drags the dock-height slider. */
     signal dockBgHeightAdjusted(real newGu)
 
+    /** Px width of the Lomiri launcher panel currently overlapping us.
+     *  We shift the dialog box right by half this so it stays centered in
+     *  the visible content area instead of slipping under the panel. */
+    property real leftReserve: 0
+
     anchors.fill: parent
     z: 900
     visible: false
@@ -48,7 +53,8 @@ Rectangle {
 
     Rectangle {
         anchors.centerIn: parent
-        width: Math.min(parent.width * 0.85, units.gu(50))
+        anchors.horizontalCenterOffset: root.leftReserve / 2
+        width: Math.min((parent.width - root.leftReserve) * 0.85, units.gu(50))
         height: settingsCol.height + units.gu(4)
         radius: units.gu(2)
         color: "#262d4d"

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # @file uninstall.sh
-# @description Full HomeSpike uninstall. Restores Shell.qml and Drawer.qml
-#   from their .orig backups (which install.sh created on first run),
-#   removes /opt/home-spike, the .desktop file, and the cross-process
-#   inbox. Then reboots. Safe to run even if install never happened —
-#   just prints "no backup found" and moves on.
+# @description Full HomeSpike uninstall. Restores each /usr/share/lomiri
+#   file we replaced from its .orig backup, removes /opt/home-spike, the
+#   .desktop file, and the cross-process inbox. Then reboots. Safe to run
+#   even if install never happened — just prints "no backup found" per
+#   missing backup and moves on.
+#
+#   Also strips any leftover HOME_SPIKE_* sentinel lines from Stage.qml
+#   in case an older install.sh that used sed left them behind.
 #
 # @status Stable.
 # @issues Does NOT delete /home/phablet/.config/home-spike/home-spike.conf
@@ -35,30 +38,35 @@ fi
 "$ADB" shell "echo '$PIN' | sudo -S sh -c '
   set -e
   mount -o remount,rw /
-  if test -f /usr/share/lomiri/Shell.qml.orig; then
-    mv /usr/share/lomiri/Shell.qml.orig /usr/share/lomiri/Shell.qml
-    echo restored Shell.qml
-  else
-    echo no Shell.qml backup found
-  fi
-  if test -f /usr/share/lomiri/Launcher/Drawer.qml.orig; then
-    mv /usr/share/lomiri/Launcher/Drawer.qml.orig /usr/share/lomiri/Launcher/Drawer.qml
-    echo restored Drawer.qml
-  else
-    echo no Drawer.qml backup found
-  fi
-  if test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig; then
-    mv /usr/share/lomiri/Stage/Spread/Spread.qml.orig /usr/share/lomiri/Stage/Spread/Spread.qml
-    echo restored Spread.qml
-  else
-    echo no Spread.qml backup found
-  fi
-  # Remove the Stage.qml HOME_SPIKE_SPREAD_ACTIVE sentinel line if present
-  if grep -q HOME_SPIKE_SPREAD_ACTIVE /usr/share/lomiri/Stage/Stage.qml; then
-    sed -i "/HOME_SPIKE_SPREAD_ACTIVE/d" /usr/share/lomiri/Stage/Stage.qml
-    echo cleaned Stage.qml sentinel
-  fi
-  rm -rf /opt/home-spike /usr/share/applications/home-spike.desktop
+
+  for target in \
+      /usr/share/lomiri/Shell.qml \
+      /usr/share/lomiri/Launcher/Drawer.qml \
+      /usr/share/lomiri/Stage/Spread/Spread.qml \
+      /usr/share/lomiri/Stage/Stage.qml; do
+    if test -f \${target}.orig; then
+      mv \${target}.orig \${target}
+      echo restored \${target}
+    else
+      echo no backup for \${target}
+    fi
+  done
+
+  # Sweep any leftover HOME_SPIKE_* sentinel lines (from older sed-based installs).
+  for marker in HOME_SPIKE_SPREAD_ACTIVE HOME_SPIKE_HIDE_IN_SPREAD HOME_SPIKE_AUTOSTART; do
+    if grep -q \"\$marker\" /usr/share/lomiri/Stage/Stage.qml 2>/dev/null; then
+      sed -i \"/\$marker/d\" /usr/share/lomiri/Stage/Stage.qml
+      echo \"cleaned Stage.qml: \$marker\"
+    fi
+    if grep -q \"\$marker\" /usr/share/lomiri/Shell.qml 2>/dev/null; then
+      sed -i \"/\$marker/d\" /usr/share/lomiri/Shell.qml
+      echo \"cleaned Shell.qml: \$marker\"
+    fi
+  done
+
+  rm -rf /opt/home-spike
+  # Sweep any home-spike.desktop left behind from older standalone-app installs.
+  rm -f /usr/share/applications/home-spike.desktop
   rm -rf /home/phablet/.config/home-spike/pending-adds.txt
   mount -o remount,ro /
 '"

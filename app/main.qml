@@ -18,7 +18,6 @@
  *         since it's the canvas everything else binds to).
  */
 import QtQuick 2.15
-import QtQuick.Window 2.15
 import Lomiri.Components 1.3
 import "persistence"
 import "wallpaper"
@@ -29,18 +28,32 @@ import "tiles"
 import "chrome"
 import "overlays"
 
-Window {
+// HomeSpike root is now an Item, not a Window — loaded inline by Lomiri's
+// Stage.qml as the background layer (z=-2). HomeSpike no longer runs as a
+// separate process; it lives inside the lomiri shell process.
+Item {
     id: root
-    visible: true
-    visibility: Window.Maximized
-    color: "#1d2540"
-    title: "Home Spike"
+    anchors.fill: parent
+
+    // Solid background under everything (the WallpaperResolver Image draws
+    // over this; the colour shows for the brief moment before it loads).
+    Rectangle { anchors.fill: parent; color: "#1d2540" }
 
     // ============================================================
     // State
     // ============================================================
     property bool editMode: false
     readonly property real dockHeight: units.gu(12)
+
+    // Lomiri's Stage.qml writes the launcher's current visible width here
+    // (via the Loader's binding) so we can inset our grid/dock/dots and
+    // not let the launcher panel cover the leftmost icon column.
+    property real leftReserve: 0
+
+    // Exposed for Lomiri's Shell.qml to read — when true, the left launcher
+    // panel is force-collapsed (lockedVisible=false) so the dock owns the
+    // bottom row of launcher icons and the grid uses the full width.
+    readonly property bool dockEnabled: persist.dockEnabled
 
     // ---- Core modules ----
     PersistedSettings { id: persist }
@@ -97,6 +110,7 @@ Window {
             bottom: pageDots.top
             topMargin: units.gu(5)
             bottomMargin: units.gu(1)
+            leftMargin: root.leftReserve
         }
         orientation: ListView.Horizontal
         snapMode: ListView.SnapOneItem
@@ -160,6 +174,10 @@ Window {
         id: pageDots
         anchors {
             horizontalCenter: parent.horizontalCenter
+            // Keep the dots optically centered in the content area (the area
+            // to the right of the launcher panel) by shifting them by half
+            // the reserved left margin.
+            horizontalCenterOffset: root.leftReserve / 2
             bottom: persist.dockEnabled ? dockBar.top : parent.bottom
             bottomMargin: units.gu(1.5)
         }
@@ -184,7 +202,7 @@ Window {
             bottom: parent.bottom; left: parent.left; right: parent.right
             // Smaller bottom margin sits the dock closer to the screen edge,
             // matching the iOS-style "icons near the bottom" feel.
-            bottomMargin: units.gu(0.25); leftMargin: units.gu(2); rightMargin: units.gu(2)
+            bottomMargin: units.gu(0.25); leftMargin: root.leftReserve + units.gu(2); rightMargin: units.gu(2)
         }
         height: root.dockHeight
 
@@ -276,6 +294,7 @@ Window {
         maxPages: pages.maxPages
         dockEnabled: persist.dockEnabled
         dockBgHeight: persist.dockBgHeight
+        leftReserve: root.leftReserve
         onPageCountAdjusted: (n) => pages.setPageCount(n)
         onDockToggled: (on) => pages.toggleDock(on)
         onDockBgHeightAdjusted: (gu) => persist.dockBgHeight = gu
@@ -283,6 +302,7 @@ Window {
 
     ConfirmRemoveOverlay {
         id: confirmRemove
+        leftReserve: root.leftReserve
         onConfirmed: (appId) => pages.hideApp(appId)
     }
 }

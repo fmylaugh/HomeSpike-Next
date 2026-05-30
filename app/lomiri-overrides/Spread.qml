@@ -69,6 +69,10 @@ Item {
 
     signal leaveSpread()
     signal closeCurrentApp();
+    // HomeSpike: emitted when the user taps the home button in the spread.
+    // Stage.qml's `onHomeRequested` handler minimises all apps so the
+    // HomeSpike background layer is revealed.
+    signal homeRequested()
 
     // Calculated stuff
     readonly property int totalItemCount: model.count
@@ -235,8 +239,8 @@ Item {
             anchors.fill: parent
             enabled: root.active   // critical: blocks taps when spread isn't shown
             onClicked: {
+                root.homeRequested();
                 root.leaveSpread();
-                Qt.openUrlExternally("application:///home-spike.desktop");
             }
         }
     }
