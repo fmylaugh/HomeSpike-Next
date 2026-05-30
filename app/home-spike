@@ -1,0 +1,10 @@
+#!/bin/sh
+# Add Lomiri's QML module path so we can import AccountsService and read
+# the user-chosen wallpaper the same way the shell does.
+#
+# Path is multiarch-dependent (aarch64-linux-gnu, arm-linux-gnueabihf,
+# x86_64-linux-gnu, ...). Glob over all matches so this wrapper works
+# on any architecture UT runs on.
+LOMIRI_QML="$(echo /usr/lib/*-linux-gnu*/lomiri/qml | tr ' ' ':')"
+export QML2_IMPORT_PATH="${LOMIRI_QML}:${QML2_IMPORT_PATH:-}"
+exec qmlscene /opt/home-spike/main.qml "$@"

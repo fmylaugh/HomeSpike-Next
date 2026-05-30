@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Home Spike
+Comment=Throwaway: validate that a custom app can become the home surface
+Exec=/opt/home-spike/home-spike
+Terminal=false
+Icon=preferences-desktop-wallpaper
+X-Lomiri-Touch=true
+X-Lomiri-Single-Instance=true

@@ -1,0 +1,18 @@
+# Per-machine TeamIDE / Claude Code config (hooks, settings)
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editors
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local secrets — never commit
+*.pem
+*.key
+.env
+.env.*
