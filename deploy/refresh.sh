@@ -58,6 +58,17 @@ fi
     test -f /usr/share/lomiri/Launcher/Drawer.qml.orig || cp /usr/share/lomiri/Launcher/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml.orig
     cp /opt/home-spike/lomiri-overrides/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml
     chmod 644 /usr/share/lomiri/Launcher/Drawer.qml
+
+    # Also reapply Spread.qml (lives in Stage/Spread/, separate dir from Drawer)
+    test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig || cp /usr/share/lomiri/Stage/Spread/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml.orig
+    cp /opt/home-spike/lomiri-overrides/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml
+    chmod 644 /usr/share/lomiri/Stage/Spread/Spread.qml
+
+    # Stage.qml: bind Spread.active to spread/peek states. Always re-applied
+    # (drops the old sentinel line, inserts fresh) so refining the expression
+    # doesnt require manual cleanup.
+    sed -i \"/HOME_SPIKE_SPREAD_ACTIVE/d\" /usr/share/lomiri/Stage/Stage.qml
+    sed -i \"/objectName: \\\"spreadItem\\\"/a\\            active: root.spreadShown || (root.state \\&\\& root.state.indexOf(\\\"RightEdge\\\") >= 0); /* HOME_SPIKE_SPREAD_ACTIVE */\" /usr/share/lomiri/Stage/Stage.qml
   fi
 
   mount -o remount,ro /

@@ -64,6 +64,16 @@ echo "[3/4] Remount rw, install app tree, patch Shell.qml + Drawer.qml..."
   cp /opt/home-spike/lomiri-overrides/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml
   chmod 644 /usr/share/lomiri/Launcher/Drawer.qml
 
+  # ----- Spread.qml: home button in the right-swipe task switcher -----
+  test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig || cp /usr/share/lomiri/Stage/Spread/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml.orig
+  cp /opt/home-spike/lomiri-overrides/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml
+  chmod 644 /usr/share/lomiri/Stage/Spread/Spread.qml
+
+  # ----- Stage.qml: bind Spread.active so the home button only renders
+  #       during the right-swipe (spread or peek). Always re-applied.
+  sed -i \"/HOME_SPIKE_SPREAD_ACTIVE/d\" /usr/share/lomiri/Stage/Stage.qml
+  sed -i \"/objectName: \\\"spreadItem\\\"/a\\            active: root.spreadShown || (root.state \\&\\& root.state.indexOf(\\\"RightEdge\\\") >= 0); /* HOME_SPIKE_SPREAD_ACTIVE */\" /usr/share/lomiri/Stage/Stage.qml
+
   # ----- Inbox file used by Drawer→HomeSpike IPC -----
   mkdir -p /home/phablet/.config/home-spike
   touch /home/phablet/.config/home-spike/pending-adds.txt

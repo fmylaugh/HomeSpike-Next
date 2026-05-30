@@ -47,6 +47,17 @@ fi
   else
     echo no Drawer.qml backup found
   fi
+  if test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig; then
+    mv /usr/share/lomiri/Stage/Spread/Spread.qml.orig /usr/share/lomiri/Stage/Spread/Spread.qml
+    echo restored Spread.qml
+  else
+    echo no Spread.qml backup found
+  fi
+  # Remove the Stage.qml HOME_SPIKE_SPREAD_ACTIVE sentinel line if present
+  if grep -q HOME_SPIKE_SPREAD_ACTIVE /usr/share/lomiri/Stage/Stage.qml; then
+    sed -i "/HOME_SPIKE_SPREAD_ACTIVE/d" /usr/share/lomiri/Stage/Stage.qml
+    echo cleaned Stage.qml sentinel
+  fi
   rm -rf /opt/home-spike /usr/share/applications/home-spike.desktop
   rm -rf /home/phablet/.config/home-spike/pending-adds.txt
   mount -o remount,ro /
