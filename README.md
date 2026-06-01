@@ -24,7 +24,7 @@ HomeSpike is loaded **inside the lomiri shell process** as the background layer 
     </td>
     <td align="center" width="33%">
       <a href="pictures/03-edit-mode.png"><img src="pictures/03-edit-mode.png" width="240" alt="Edit mode with × badges on tiles, Done pill top-right, settings gear bottom-right"></a><br>
-      <sub><b>Edit mode</b><br>Long-press a tile: × badges, Done pill, settings gear</sub>
+      <sub><b>Edit mode</b><br>Long-press an app or empty space</sub>
     </td>
   </tr>
   <tr>
