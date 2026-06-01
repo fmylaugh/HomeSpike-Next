@@ -186,6 +186,14 @@ Item {
                     width: pagesView.tileW
                     height: pagesView.tileH
 
+                    // Swell slightly when a dragged app is hovering over this
+                    // tile to merge into it — the "drop here to make a folder"
+                    // cue (mirrors the dock's targeting highlight).
+                    scale: (dragController.dragging
+                            && dragController.sourcePage === pageDelegate.pageIndex
+                            && dragController.mergeTargetIndex === index) ? 1.18 : 1.0
+                    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
+
                     // Read positional roles ourselves so the binding can
                     // switch source field when placementMode changes.
                     readonly property string mode: persist.placementMode
@@ -259,7 +267,24 @@ Item {
                         indexInModel: index
                         editMode: root.editMode
                         controller: dragController
+                        // Folder fields — inert for app rows (kind === "app").
+                        kind: model.kind
+                        folderId: model.folderId
+                        folderName: model.folderName
+                        folderIcons: {
+                            if (model.kind !== "folder") return [];
+                            var ids = [];
+                            try { ids = JSON.parse(model.appsJson || "[]"); } catch (e) { ids = []; }
+                            var icons = [];
+                            for (var i = 0; i < ids.length && icons.length < 4; ++i) {
+                                var info = pages.appInfo(ids[i]);
+                                if (info) icons.push(info.icon);
+                            }
+                            return icons;
+                        }
                         onRemoveRequested: (id, name) => confirmRemove.show(id, name)
+                        onFolderOpenRequested: (fid) => folderOverlay.open(fid)
+                        onFolderDissolveRequested: (fid) => pages.dissolveFolder(fid)
                         onEditModeRequested: root.editMode = true
                         onLaunchRequested: (id) => root.launchRequested(id)
                     }
@@ -400,6 +425,9 @@ Item {
         persist: persist
         pagesView: pagesView
         dockBar: dockBar
+        // App dropped on app → ask for a folder name, then create on confirm.
+        onFolderCreateRequested: (page, targetAppId, sourceAppId) =>
+            folderNameOverlay.show(page, targetAppId, sourceAppId)
     }
 
     // ============================================================
@@ -423,5 +451,24 @@ Item {
         id: confirmRemove
         leftReserve: root.leftReserve
         onConfirmed: (appId) => pages.hideApp(appId)
+    }
+
+    // ----- Folder overlays -----
+    // Name popup shown when an app is dropped onto another app. Confirm
+    // creates the folder; cancel reverts the (un-persisted) drag with a rebuild.
+    FolderNameOverlay {
+        id: folderNameOverlay
+        leftReserve: root.leftReserve
+        onConfirmed: (page, targetAppId, sourceAppId, folderName) =>
+            pages.createFolder(page, targetAppId, sourceAppId, folderName)
+        onCancelled: () => pages.rebuildVisible()
+    }
+
+    // Open-folder view: launch / rename / remove members.
+    FolderOverlay {
+        id: folderOverlay
+        pages: pages
+        leftReserve: root.leftReserve
+        onLaunchRequested: (id) => root.launchRequested(id)
     }
 }

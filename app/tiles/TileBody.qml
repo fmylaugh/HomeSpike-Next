@@ -35,6 +35,16 @@ Item {
      *  when Lomiri's side panel narrows the available width. */
     property real iconSize: units.gu(6)
 
+    // ---- Folder fields (kind === "folder") ----
+    /** "app" (single icon, launches) or "folder" (2x2 preview, opens). */
+    property string kind: "app"
+    /** Stable folder id — the drag key and open/dissolve target. */
+    property string folderId: ""
+    /** Folder display name (shown as the label). */
+    property string folderName: ""
+    /** Up to 4 member icon URIs for the 2x2 preview. */
+    property var folderIcons: []
+
     // ---- Source-of-truth hints for the drag controller ----
     /** Either "grid" or "dock". */
     property string container: "grid"
@@ -49,8 +59,14 @@ Item {
     /** DragController instance for routing drag events. */
     property var controller: null
 
-    /** Emitted when the user taps the X badge. */
+    /** Emitted when the user taps the X badge on an app tile. */
     signal removeRequested(string appId, string appName)
+
+    /** Emitted when the user taps a folder (not in edit mode) — open it. */
+    signal folderOpenRequested(string folderId)
+
+    /** Emitted when the user taps the X badge on a folder — dissolve it. */
+    signal folderDissolveRequested(string folderId)
 
     /** Emitted on long-press while NOT in edit mode (caller should enable it). */
     signal editModeRequested()
@@ -81,6 +97,10 @@ Item {
 
         onClicked: {
             if (body.editMode) return;
+            if (body.kind === "folder") {
+                body.folderOpenRequested(body.folderId);
+                return;
+            }
             body.launchRequested(body.appId);
             Qt.openUrlExternally("application:///" + body.appId + ".desktop");
         }
@@ -105,9 +125,15 @@ Item {
                 if (Math.sqrt(dx*dx + dy*dy) < dragThreshold) return;
                 dragStarted = true;
                 var startPt = mapToItem(controller, mouseX, mouseY);
+                // Drag key is the folderId for folders, appId for apps. The
+                // floating-icon preview uses the first member icon for folders.
+                var key  = (body.kind === "folder") ? body.folderId : body.appId;
+                var nm   = (body.kind === "folder") ? body.folderName : body.appName;
+                var icon = (body.kind === "folder")
+                           ? ((body.folderIcons && body.folderIcons.length > 0) ? body.folderIcons[0] : "")
+                           : body.iconSrc;
                 controller.startDrag(body.container, body.sourcePage, body.indexInModel,
-                                         body.appId, body.appName, body.iconSrc,
-                                         startPt.x, startPt.y);
+                                         key, nm, icon, startPt.x, startPt.y);
             }
             var pt = mapToItem(controller, mouseX, mouseY);
             controller.moveDrag(pt.x, pt.y);
@@ -135,17 +161,59 @@ Item {
             height: 7.5 / 8 * width
             anchors.horizontalCenter: parent.horizontalCenter
 
-            LomiriShape {
-                id: shape
+            // Rotating content wrapper — the jiggle rocks this, so it covers
+            // both the app icon and the folder preview while leaving the "×"
+            // badge upright.
+            Item {
+                id: iconContent
                 anchors.fill: parent
-                radius: "medium"
-                borderSource: "undefined"
-                sourceFillMode: LomiriShape.PreserveAspectCrop
-                source: Image {
-                    asynchronous: true
-                    sourceSize.width: shape.width
-                    source: body.iconSrc
+
+                // App icon (single shape).
+                LomiriShape {
+                    id: shape
+                    anchors.fill: parent
+                    visible: body.kind !== "folder"
+                    radius: "medium"
+                    borderSource: "undefined"
+                    sourceFillMode: LomiriShape.PreserveAspectCrop
+                    source: Image {
+                        asynchronous: true
+                        sourceSize.width: shape.width
+                        source: body.iconSrc
+                    }
                 }
+
+                // Folder preview: frosted plate with up to 4 mini icons (2x2).
+                Rectangle {
+                    id: folderPlate
+                    visible: body.kind === "folder"
+                    anchors.fill: parent
+                    radius: units.gu(1.2)
+                    color: "#40ffffff"
+
+                    Grid {
+                        anchors.centerIn: parent
+                        columns: 2
+                        rowSpacing: units.gu(0.4)
+                        columnSpacing: units.gu(0.4)
+                        Repeater {
+                            model: body.folderIcons
+                            delegate: LomiriShape {
+                                width: (folderPlate.width - units.gu(1.6)) / 2
+                                height: 7.5 / 8 * width
+                                radius: "small"
+                                borderSource: "undefined"
+                                sourceFillMode: LomiriShape.PreserveAspectCrop
+                                source: Image {
+                                    asynchronous: true
+                                    sourceSize.width: width
+                                    source: modelData
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Edit-mode jiggle: a clear side-to-side rock so the user can
                 // see tiles are now draggable. Paused while a drag is in flight
                 // so the lifted tile doesn't jitter. A one-shot random head
@@ -156,14 +224,15 @@ Item {
                     PauseAnimation { duration: Math.round(Math.random() * 140) }
                     SequentialAnimation {
                         loops: Animation.Infinite
-                        NumberAnimation { target: shape; property: "rotation"; from: -3; to: 3; duration: 140; easing.type: Easing.InOutSine }
-                        NumberAnimation { target: shape; property: "rotation"; from: 3; to: -3; duration: 140; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: iconContent; property: "rotation"; from: -3; to: 3; duration: 140; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: iconContent; property: "rotation"; from: 3; to: -3; duration: 140; easing.type: Easing.InOutSine }
                     }
-                    onStopped: shape.rotation = 0
+                    onStopped: iconContent.rotation = 0
                 }
             }
 
-            // Remove badge ("×") — top-left corner, edit mode only
+            // Remove badge ("×") — top-left corner, edit mode only.
+            // Dissolves a folder; hides an app from home.
             Rectangle {
                 visible: body.editMode
                 anchors {
@@ -191,14 +260,17 @@ Item {
                     anchors.fill: parent
                     // Slightly larger hit target than the visible circle
                     anchors.margins: -units.gu(0.5)
-                    onClicked: body.removeRequested(body.appId, body.appName)
+                    onClicked: {
+                        if (body.kind === "folder") body.folderDissolveRequested(body.folderId);
+                        else body.removeRequested(body.appId, body.appName);
+                    }
                 }
             }
         }
 
         Label {
             visible: body.showLabel
-            text: body.appName
+            text: body.kind === "folder" ? body.folderName : body.appName
             width: units.gu(9)
             horizontalAlignment: Text.AlignHCenter
             anchors.horizontalCenter: parent.horizontalCenter

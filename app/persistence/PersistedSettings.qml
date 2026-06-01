@@ -32,6 +32,11 @@ Item {
         //       free:     [{appId, xFrac, yFrac}, ...] },
         //     ...
         //   ]
+        // Any entry may instead be a FOLDER object holding a list of member
+        // appIds (grid-only; never in the dock):
+        //   autoFill: {folder:true, id, name, apps:[appId,...]}
+        //   snap:     {folder:true, id, name, apps:[...], col, row}
+        //   free:     {folder:true, id, name, apps:[...], xFrac, yFrac}
         // Legacy shape `[[appId,...],...]` is migrated into .autoFill on read.
         property string pageData:     '[{"autoFill":[],"snap":[],"free":[]}]'
         property int    pageCount:    1

@@ -201,7 +201,9 @@ Item {
     /**
      * Fill pageModels from pageData using the active placementMode's slot.
      * autoFill uses sequential cells (col = i%cols, row = floor(i/cols)).
-     * snap reads explicit col/row. free reads explicit xFrac/yFrac.
+     * snap reads explicit col/row. free reads explicit xFrac/yFrac. Folder
+     * entries occupy a slot like an app and consume their member appIds so
+     * those don't also render as standalone tiles.
      */
     function _fillPages(pageData, source, hiddenSet, dockSet) {
         var mode = persist.placementMode;
@@ -212,18 +214,13 @@ Item {
             var seq = 0;
             for (var k = 0; k < entries.length; ++k) {
                 var entry = entries[k];
-                var appId = (typeof entry === "string") ? entry : (entry ? entry.appId : null);
-                if (!appId)              continue;
-                if (hiddenSet[appId])    continue;
-                if (dockSet[appId])      continue;
-                if (!source[appId])      continue;
-                if (source[appId]._used) continue;
+                var isFolder = entry && typeof entry === "object" && entry.folder === true;
 
+                // Slot position — identical maths for apps and folders.
                 var col = -1, rowI = -1, xFrac = -1, yFrac = -1;
                 if (mode === "autoFill") {
                     col  = seq % cols;
                     rowI = Math.floor(seq / cols);
-                    seq++;
                 } else if (mode === "snap") {
                     col  = (entry && typeof entry.col === "number") ? entry.col  : -1;
                     rowI = (entry && typeof entry.row === "number") ? entry.row  : -1;
@@ -231,8 +228,40 @@ Item {
                     xFrac = (entry && typeof entry.xFrac === "number") ? entry.xFrac : 0.0;
                     yFrac = (entry && typeof entry.yFrac === "number") ? entry.yFrac : 0.0;
                 }
+
+                if (isFolder) {
+                    // Keep only visible, installed, not-already-placed members.
+                    var members = Array.isArray(entry.apps) ? entry.apps : [];
+                    var live = [];
+                    for (var mi = 0; mi < members.length; ++mi) {
+                        var aid = members[mi];
+                        if (!aid)              continue;
+                        if (hiddenSet[aid])    continue;
+                        if (dockSet[aid])      continue;
+                        if (!source[aid])      continue;
+                        if (source[aid]._used) continue;
+                        live.push(aid);
+                        source[aid]._used = true;
+                    }
+                    if (live.length === 0) continue;  // empty folder → drop it
+                    pageModels[p].append(_makeFolderRow(
+                        entry.id || _newFolderId(), entry.name || "Folder",
+                        live, col, rowI, xFrac, yFrac));
+                    if (mode === "autoFill") seq++;
+                    continue;
+                }
+
+                // App entry.
+                var appId = (typeof entry === "string") ? entry : (entry ? entry.appId : null);
+                if (!appId)              continue;
+                if (hiddenSet[appId])    continue;
+                if (dockSet[appId])      continue;
+                if (!source[appId])      continue;
+                if (source[appId]._used) continue;
+
                 pageModels[p].append(_makeRow(source[appId], col, rowI, xFrac, yFrac));
                 source[appId]._used = true;
+                if (mode === "autoFill") seq++;
             }
         }
     }
@@ -287,7 +316,37 @@ Item {
             col:   col,
             row:   rowI,
             xFrac: xf,
-            yFrac: yf
+            yFrac: yf,
+            // Folder fields — present on EVERY row so ListModel locks these
+            // roles as string from the first append (see the type note above).
+            kind:       "app",
+            folderId:   "",
+            folderName: "",
+            appsJson:   ""
+        };
+    }
+
+    /**
+     * Build a ListModel row for a folder entry. Carries the same positional
+     * fields as an app row (so it lives in a grid cell like any tile) plus the
+     * folder identity + member list. appId/name/icon are left empty — the
+     * renderer keys off kind === "folder".
+     */
+    function _makeFolderRow(folderId, folderName, appIds, col, rowI, xFrac, yFrac) {
+        var xf = (typeof xFrac === "number" && xFrac >= 0) ? xFrac : -0.5;
+        var yf = (typeof yFrac === "number" && yFrac >= 0) ? yFrac : -0.5;
+        return {
+            appId: "",
+            name:  folderName,
+            icon:  "",
+            col:   col,
+            row:   rowI,
+            xFrac: xf,
+            yFrac: yf,
+            kind:       "folder",
+            folderId:   folderId,
+            folderName: folderName,
+            appsJson:   JSON.stringify(appIds)
         };
     }
 
@@ -391,7 +450,14 @@ Item {
             var list = [];
             for (var i = 0; i < pageModels[p].count; ++i) {
                 var r = pageModels[p].get(i);
-                if (mode === "autoFill") {
+                if (r.kind === "folder") {
+                    // Folder entry: same shape in every mode, plus position.
+                    var fobj = { folder: true, id: r.folderId, name: r.folderName,
+                                 apps: _parseApps(r.appsJson) };
+                    if (mode === "snap")      { fobj.col = r.col; fobj.row = r.row; }
+                    else if (mode === "free") { fobj.xFrac = r.xFrac; fobj.yFrac = r.yFrac; }
+                    list.push(fobj);
+                } else if (mode === "autoFill") {
                     list.push(r.appId);
                 } else if (mode === "snap") {
                     list.push({ appId: r.appId, col: r.col, row: r.row });
@@ -500,7 +566,13 @@ Item {
         var placed = {};
         for (var p = 0; p < persist.pageCount; ++p) {
             for (var ii = 0; ii < pageModels[p].count; ++ii) {
-                placed[pageModels[p].get(ii).appId] = true;
+                var r = pageModels[p].get(ii);
+                if (r.kind === "folder") {
+                    var fa = _parseApps(r.appsJson);
+                    for (var fi = 0; fi < fa.length; ++fi) placed[fa[fi]] = true;
+                } else {
+                    placed[r.appId] = true;
+                }
             }
         }
         for (var dd = 0; dd < _dock.count; ++dd) {
@@ -517,5 +589,171 @@ Item {
             }
         }
         return null;
+    }
+
+    // --------------------------------------------------------------
+    // Folders
+    // --------------------------------------------------------------
+
+    /** Public {name, icon} lookup for an installed appId (folder previews +
+     *  the open-folder view). Returns null if the app is gone. */
+    function appInfo(appId) {
+        return _findSourceApp(appId);
+    }
+
+    /** Member appIds of a folder (empty array if it no longer exists). */
+    function folderApps(folderId) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return [];
+        return _parseApps(pageModels[loc.page].get(loc.index).appsJson);
+    }
+
+    /** Display name of a folder ("" if it no longer exists). */
+    function folderNameOf(folderId) {
+        var loc = _findRowByFolderId(folderId);
+        return loc ? pageModels[loc.page].get(loc.index).folderName : "";
+    }
+
+    /** Whether a folder with this id is still on the grid. */
+    function hasFolder(folderId) {
+        return _findRowByFolderId(folderId) !== null;
+    }
+
+    function _parseApps(json) {
+        if (!json) return [];
+        try {
+            var a = JSON.parse(json);
+            return Array.isArray(a) ? a : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function _newFolderId() {
+        return "f-" + Date.now() + "-" + Math.floor(Math.random() * 1000000);
+    }
+
+    /** Index of the app row matching appId on a page model, or -1. Folder
+     *  rows (appId === "") never match. */
+    function _indexOfRowByAppId(m, appId) {
+        for (var i = 0; i < m.count; ++i) {
+            var r = m.get(i);
+            if (r.kind !== "folder" && r.appId === appId) return i;
+        }
+        return -1;
+    }
+
+    /** Locate an app row across all visible pages → {page, index} or null. */
+    function _findRowByAppId(appId) {
+        for (var p = 0; p < persist.pageCount; ++p) {
+            var idx = _indexOfRowByAppId(pageModels[p], appId);
+            if (idx >= 0) return { page: p, index: idx };
+        }
+        return null;
+    }
+
+    /** Locate a folder row by id across all visible pages → {page, index} or null. */
+    function _findRowByFolderId(folderId) {
+        for (var p = 0; p < persist.pageCount; ++p) {
+            var m = pageModels[p];
+            for (var i = 0; i < m.count; ++i) {
+                var r = m.get(i);
+                if (r.kind === "folder" && r.folderId === folderId) {
+                    return { page: p, index: i };
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Create a folder from two apps on the same page: the dragged source app
+     * (sourceAppId) dropped onto the target app (targetAppId). The folder takes
+     * the target's slot; both standalone app rows are removed. Persists.
+     */
+    function createFolder(pageIdx, targetAppId, sourceAppId, folderName) {
+        if (!targetAppId || !sourceAppId || targetAppId === sourceAppId) return;
+        if (pageIdx < 0 || pageIdx >= persist.pageCount) return;
+        var m = pageModels[pageIdx];
+        var ti = _indexOfRowByAppId(m, targetAppId);
+        if (ti < 0) return;
+        var t = m.get(ti);
+        var name = (folderName && folderName.length > 0) ? folderName : "Folder";
+        // Replace the target row in place with the folder (keeps its slot).
+        m.set(ti, _makeFolderRow(_newFolderId(), name,
+                                 [targetAppId, sourceAppId],
+                                 t.col, t.row, t.xFrac, t.yFrac));
+        // Remove the source app row (recompute its index — it may sit anywhere).
+        var si = _indexOfRowByAppId(m, sourceAppId);
+        if (si >= 0) m.remove(si, 1);
+        persistOrder();
+    }
+
+    /** Add an app into an existing folder; removes its standalone row. Persists. */
+    function addAppToFolder(folderId, appId) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var apps = _parseApps(m.get(loc.index).appsJson);
+        if (apps.indexOf(appId) === -1) apps.push(appId);
+        m.setProperty(loc.index, "appsJson", JSON.stringify(apps));
+        var sl = _findRowByAppId(appId);
+        if (sl) pageModels[sl.page].remove(sl.index, 1);
+        persistOrder();
+    }
+
+    /**
+     * Remove an app from a folder. The app returns to the grid. Auto-dissolve:
+     * if one member remains the folder becomes that single app at its slot; if
+     * none remain the folder is removed. Persists.
+     */
+    function removeAppFromFolder(folderId, appId) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var f = m.get(loc.index);
+        var apps = _parseApps(f.appsJson);
+        var i = apps.indexOf(appId);
+        if (i >= 0) apps.splice(i, 1);
+
+        if (apps.length === 0) {
+            m.remove(loc.index, 1);
+        } else if (apps.length === 1) {
+            // Dissolve to the remaining single app at the folder's slot.
+            var keep = _findSourceApp(apps[0]);
+            if (keep) m.set(loc.index, _makeRow(keep, f.col, f.row, f.xFrac, f.yFrac));
+            else      m.remove(loc.index, 1);
+        } else {
+            m.setProperty(loc.index, "appsJson", JSON.stringify(apps));
+        }
+
+        // The removed app returns to the grid on the folder's page.
+        var rm = _findSourceApp(appId);
+        if (rm) _placeAtFirstFreeCell(loc.page, rm);
+        persistOrder();
+    }
+
+    /** Rename a folder. Persists. */
+    function renameFolder(folderId, name) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return;
+        var n = (name && name.length > 0) ? name : "Folder";
+        pageModels[loc.page].setProperty(loc.index, "folderName", n);
+        pageModels[loc.page].setProperty(loc.index, "name", n);
+        persistOrder();
+    }
+
+    /** Dissolve a folder entirely — release all members to the grid. Persists. */
+    function dissolveFolder(folderId) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var apps = _parseApps(m.get(loc.index).appsJson);
+        m.remove(loc.index, 1);
+        for (var i = 0; i < apps.length; ++i) {
+            var a = _findSourceApp(apps[i]);
+            if (a) _placeAtFirstFreeCell(loc.page, a);
+        }
+        persistOrder();
     }
 }

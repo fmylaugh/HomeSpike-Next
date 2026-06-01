@@ -45,6 +45,11 @@ Item {
      *  highlighting to this. */
     property bool targetingDock: false
 
+    /** While dragging an app, the model index (on sourcePage) of the tile the
+     *  finger is hovering over to merge into — or -1. Drives the merge
+     *  highlight and suppresses reorder so the drop lands on that tile. */
+    property int mergeTargetIndex: -1
+
     // ---- Live drag state ----
     readonly property bool dragging: sourceIndex >= 0
     property int    sourceIndex: -1
@@ -53,6 +58,13 @@ Item {
     property string sourceAppId: ""
     property string sourceName:  ""
     property string sourceIcon:  ""
+    // "app" or "folder" — folders can be reordered/moved but never merge into
+    // another tile or get dropped into the dock.
+    property string sourceKind:  "app"
+
+    /** Emitted when an app is dropped onto another app — caller shows the
+     *  name popup, then calls pages.createFolder on confirm. */
+    signal folderCreateRequested(int page, string targetAppId, string sourceAppId)
 
     // Pre-drag positional snapshot, captured at startDrag. Used by snap
     // mode to resolve cell collisions on release (the displaced tile is
@@ -155,8 +167,9 @@ Item {
 
     /**
      * Begin a drag. (container, page, idx) are hints from the press delegate;
-     * the real source is whichever model actually has appId. Bail silently
-     * if appId can't be located.
+     * the real source is whichever model actually has this key. `appId` is a
+     * generic key: an appId for app tiles, a folderId for folder tiles. Bail
+     * silently if it can't be located.
      */
     function startDrag(container, page, idx, appId, name, icon, x, y) {
         var loc = _findAppLocation(appId);
@@ -172,11 +185,13 @@ Item {
         sourceAppId = appId;
         sourceName = name;
         sourceIcon = icon;
+        sourceKind = "app";
         // Snapshot the pre-drag positional fields so snap-mode collision
         // resolution can swap (give the displaced tile our old cell)
         // instead of overwriting. Safe to read on dock rows too; sentinels.
         if (loc.container === "grid") {
             var r = pages.pageModels[loc.page].get(loc.index);
+            sourceKind      = (r.kind === "folder") ? "folder" : "app";
             sourcePrevCol   = (typeof r.col   === "number") ? r.col   : -1;
             sourcePrevRow   = (typeof r.row   === "number") ? r.row   : -1;
             sourcePrevXFrac = (typeof r.xFrac === "number") ? r.xFrac : -1;
@@ -207,8 +222,24 @@ Item {
 
         _updateEdgeFlipDirection(x);
 
-        if (_isOverDock(x, y)) _handleOverDock(x, y);
-        else _handleOverGrid(x, y);
+        if (_isOverDock(x, y)) {
+            mergeTargetIndex = -1;
+            _handleOverDock(x, y);
+            return;
+        }
+
+        // Hovering an app source directly over another tile = merge intent:
+        // hold the layout (skip reorder/move) so the drop lands on that tile.
+        // The floating icon still tracks the finger; neighbouring tiles
+        // freezing is the "will merge here" cue.
+        var mt = (sourceContainer === "grid" && sourceKind === "app")
+                 ? _mergeTargetIndex(x, y) : -1;
+        mergeTargetIndex = mt;
+        if (mt >= 0) {
+            targetingDock = false;
+            return;
+        }
+        _handleOverGrid(x, y);
     }
 
     /**
@@ -226,19 +257,54 @@ Item {
             // the drag. By the time we're in endDrag the release already
             // fired, so it's safe to mutate the models now.
             var overDock = _isOverDock(lastDragX, lastDragY);
+            var persistNow = true;
+
             if (sourceContainer === "grid" && overDock) {
-                _commitGridToDock(lastDragX, lastDragY);
+                if (sourceKind === "folder") {
+                    // Folders are grid-only — discard the live reorder, stay put.
+                    pages.rebuildVisible();
+                    persistNow = false;
+                } else {
+                    _commitGridToDock(lastDragX, lastDragY);
+                }
             } else if (sourceContainer === "dock" && !overDock) {
                 _commitDockToGrid();
-            } else if (sourceContainer === "grid" && persist.placementMode === "snap") {
-                _snapResolveCollision();
+            } else if (sourceContainer === "grid" && !overDock) {
+                // Did we drop on top of another tile? (apps only — a folder
+                // dragged onto a tile just reorders.)
+                var mt = (sourceKind === "app") ? _mergeTargetIndex(lastDragX, lastDragY) : -1;
+                if (mt >= 0) {
+                    var tr = pages.pageModels[sourcePage].get(mt);
+                    var tgtPage = sourcePage, srcAppId = sourceAppId;
+                    if (tr.kind === "folder") {
+                        pages.addAppToFolder(tr.folderId, srcAppId);  // persists itself
+                        persistNow = false;
+                    } else {
+                        // app-on-app → name popup; commit on confirm. Revert the
+                        // live drag now so the grid behind the popup is clean and
+                        // cancel is a no-op.
+                        var tgtAppId = tr.appId;
+                        pages.rebuildVisible();
+                        folderCreateRequested(tgtPage, tgtAppId, srcAppId);
+                        persistNow = false;
+                    }
+                } else if (persist.placementMode === "snap") {
+                    _snapResolveCollision();
+                } else if (persist.placementMode === "autoFill") {
+                    // autoFill reorder is deferred to here (see _handleOverGrid).
+                    _autoFillReorder(lastDragX, lastDragY);
+                }
             }
-            pages.persistOrder();
+            // else: dock && overDock — reorder already applied live.
+
+            if (persistNow) pages.persistOrder();
         }
         targetingDock = false;
+        mergeTargetIndex = -1;
         sourceIndex = -1;
         sourcePage  = -1;
         sourceContainer = "";
+        sourceKind = "app";
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -252,10 +318,12 @@ Item {
         edgeFlipTimer.stop();
         edgeFlipTimer.direction = 0;
         targetingDock = false;
+        mergeTargetIndex = -1;
         sourceIndex = -1;
         sourcePage  = -1;
         sourceContainer = "";
         sourceAppId = "";
+        sourceKind = "app";
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -265,9 +333,10 @@ Item {
     // ============================================================
 
     /**
-     * Re-find the source's index by appId. Index can shift between moveDrag
-     * calls because other drags may have reordered the models. Returns true
-     * on success, false (after calling endDrag) if the source vanished.
+     * Re-find the source's index by key (appId for apps, folderId for folders).
+     * Index can shift between moveDrag calls because other drags may have
+     * reordered the models. Returns true on success, false (after calling
+     * endDrag) if the source vanished.
      */
     function _relocateSource() {
         var foundIdx = -1;
@@ -275,7 +344,7 @@ Item {
             if (sourcePage < 0 || sourcePage >= persist.pageCount) return false;
             var m = pages.pageModels[sourcePage];
             for (var i = 0; i < m.count; ++i) {
-                if (m.get(i).appId === sourceAppId) { foundIdx = i; break; }
+                if (_rowKey(m.get(i)) === sourceAppId) { foundIdx = i; break; }
             }
         } else if (sourceContainer === "dock") {
             for (var j = 0; j < pages.dockApps.count; ++j) {
@@ -351,10 +420,12 @@ Item {
 
     /**
      * Commit a grid→dock move at release time. Inserts at the dock slot under
-     * the drop point. No-op (tile stays in the grid) if the dock is full or
-     * the source row has gone missing. Called only from endDrag.
+     * the drop point. No-op (tile stays in the grid) if the dock is full, the
+     * source is a folder (grid-only), or the source row has gone missing.
+     * Called only from endDrag.
      */
     function _commitGridToDock(x, y) {
+        if (sourceKind === "folder") return;
         if (pages.dockApps.count >= pages.dockMax) return;
         if (sourcePage < 0 || sourceIndex < 0) return;
         if (sourceIndex >= pages.pageModels[sourcePage].count) return;
@@ -390,9 +461,12 @@ Item {
         if (sourceContainer !== "grid") return;
 
         var mode = persist.placementMode;
-        if (mode === "autoFill")    _autoFillReorder(x, y);
-        else if (mode === "snap")   _snapMoveSource(x, y);
-        else                        _freeMoveSource(x, y);
+        // autoFill is NOT reordered live: a swap-based reorder would slide the
+        // target out from under the finger and defeat the merge hot-zone test.
+        // It commits at endDrag instead. snap/free move the (invisible, opacity
+        // 0) source live, which never displaces another tile.
+        if (mode === "snap")      _snapMoveSource(x, y);
+        else if (mode === "free") _freeMoveSource(x, y);
     }
 
     // --- autoFill: live-reorder the model by index (existing behavior) ---
@@ -501,6 +575,53 @@ Item {
     }
 
     /**
+     * Find a tile on the current page to MERGE the dragged source into — i.e.
+     * the source was dropped squarely on top of another tile. Returns that
+     * tile's model index, or -1 if the drop is in open space / on itself.
+     *
+     * Works in all three modes by comparing the drop point to each OTHER
+     * tile's rendered centre (computed the same way main.qml binds x/y) and
+     * accepting the nearest one within a hot-zone roughly the icon's size.
+     */
+    function _mergeTargetIndex(x, y) {
+        if (sourcePage < 0 || sourcePage >= persist.pageCount) return -1;
+        var p  = _toPagesViewLocal(x, y);
+        var m  = pages.pageModels[sourcePage];
+        var mode = persist.placementMode;
+
+        var leftMargin = pagesView.gridLeftMargin;
+        var gridWidth  = pagesView.width - leftMargin - pagesView.gridRightMargin;
+        var cellW      = gridWidth / pages.cols;
+        var cellH      = pagesView.cellH;
+        var pageW      = pagesView.width;
+        var pageH      = pagesView.height;
+        var hot        = units.gu(4);   // ~icon radius
+        var hot2       = hot * hot;
+
+        var best = -1, bestDist = Infinity;
+        for (var i = 0; i < m.count; ++i) {
+            if (i === sourceIndex) continue;
+            var r = m.get(i);
+            var cx, cy;
+            if (mode === "free") {
+                var f = (r.xFrac > 0.001) ? r.xFrac : 0.5;
+                var g = (r.yFrac > 0.001) ? r.yFrac : 0.5;
+                cx = f * pageW;
+                cy = g * pageH;
+            } else {
+                var col = (mode === "snap") ? (r.col >= 0 ? r.col : 0) : (i % pages.cols);
+                var row = (mode === "snap") ? (r.row >= 0 ? r.row : 0) : Math.floor(i / pages.cols);
+                cx = leftMargin + col * cellW + cellW / 2;
+                cy = row * cellH + cellH / 2;
+            }
+            var dx = p.x - cx, dy = p.y - cy;
+            var d2 = dx * dx + dy * dy;
+            if (d2 < hot2 && d2 < bestDist) { bestDist = d2; best = i; }
+        }
+        return best;
+    }
+
+    /**
      * Commit a dock→grid move at release time. Drops onto the current page
      * using the active mode's natural placement. No-op if the source row has
      * gone missing. Called only from endDrag.
@@ -518,19 +639,24 @@ Item {
     // Authoritative source lookup — used by startDrag
     // ============================================================
 
+    /** A row's drag key: folderId for folders, appId for apps. */
+    function _rowKey(r) {
+        return (r && r.kind === "folder") ? r.folderId : (r ? r.appId : "");
+    }
+
     /**
-     * Find which model (and at what index) actually contains appId.
-     * Returns {container, page, index} or null.
+     * Find which model (and at what index) actually contains this key (appId
+     * for apps, folderId for folders). Returns {container, page, index} or null.
      */
-    function _findAppLocation(appId) {
+    function _findAppLocation(key) {
         for (var p = 0; p < persist.pageCount; ++p) {
             var m = pages.pageModels[p];
             for (var i = 0; i < m.count; ++i) {
-                if (m.get(i).appId === appId) return { container: "grid", page: p, index: i };
+                if (_rowKey(m.get(i)) === key) return { container: "grid", page: p, index: i };
             }
         }
         for (var d = 0; d < pages.dockApps.count; ++d) {
-            if (pages.dockApps.get(d).appId === appId) {
+            if (pages.dockApps.get(d).appId === key) {
                 return { container: "dock", page: -1, index: d };
             }
         }
