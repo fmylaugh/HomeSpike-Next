@@ -1,16 +1,12 @@
 # HomeSpike
 
-**Source / install:** <https://github.com/TeamIDE/HomeSpikev1>
+> **Unofficial fork.** A personal, independently maintained fork of TeamIDE's [HomeSpike](https://github.com/TeamIDE/HomeSpikev1). **Not affiliated with, endorsed by, or supported by TeamIDE** — don't contact them for help with this fork. "TeamIDE" names and trademarks belong to their respective owners.
 
-> A [TeamIDE](https://teamide.dev) project. If this changed how you use your phone, [chip in](https://teamide.dev/support).
-
-Join the community on [Discord](https://discord.gg/YVcsHXSCYG) · Follow on [X](https://x.com/TeamIDElab) · Subreddit: [r/TeamIDELabs](https://www.reddit.com/r/TeamIDELabs/) · YouTube: [@TeamIDElabs](https://www.youtube.com/@TeamIDElabs).
-
-Licensed [GPL-2.0-or-later](LICENSE.md). No warranty. Modifies Lomiri shell files in `/usr/share/lomiri/` and remounts `/` as rw — read [`install.sh`](deploy/install.sh) before running. Every file we touch is preserved as `.orig`; [`uninstall.sh`](deploy/uninstall.sh) restores them. If you want help adapting this to a different device, port, or use case, see [HIRE.md](docs/HIRE.md).
+Licensed [GPL-2.0-or-later](LICENSE.md). No warranty. Modifies Lomiri shell files in `/usr/share/lomiri/` and remounts `/` as rw — read [`install.sh`](deploy/install.sh) before running. Every file touched is preserved as `.orig`; [`uninstall.sh`](deploy/uninstall.sh) restores them.
 
 ---
 
-A custom **home surface** for Ubuntu Touch (Lomiri). Replaces "drawer-as-default" with what most people actually expect: a wallpapered home grid you land on after unlock, swipeable pages, an optional dock, drag-to-reorder edit mode, and three different placement modes so you can lay your icons out the way you want.
+A custom **home surface** for Ubuntu Touch (Lomiri). Replaces "drawer-as-default" with what most people actually expect: a wallpapered home grid you land on after unlock, swipeable pages you add and remove on the fly, an optional dock, **app folders**, a drag-to-reorder edit mode, and three different placement modes so you can lay your icons out the way you want.
 
 HomeSpike is loaded **inside the lomiri shell process** as the background layer (where the wallpaper used to live), so it never appears as a separate app in the task switcher and survives whatever the shell does to surfaces. The Lomiri drawer is still there — long-press an app in it to send the app to your HomeSpike grid.
 
@@ -23,18 +19,18 @@ HomeSpike is loaded **inside the lomiri shell process** as the background layer 
       <sub><b>Home grid</b><br>Default layout, launcher panel on left, page-dot indicator at the bottom</sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/04-home-with-dock.png"><img src="pictures/04-home-with-dock.png" width="240" alt="Home grid with the bottom dock enabled — launcher panel auto-collapses"></a><br>
+      <a href="pictures/02-home-with-dock.png"><img src="pictures/02-home-with-dock.png" width="240" alt="Home grid with the bottom dock enabled — launcher panel auto-collapses"></a><br>
       <sub><b>Home + dock</b><br>Dock at bottom; the launcher panel auto-collapses when the dock is on</sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/02-edit-mode.png"><img src="pictures/02-edit-mode.png" width="240" alt="Edit mode with × badges on tiles, Done pill top-right, settings gear bottom-right"></a><br>
+      <a href="pictures/03-edit-mode.png"><img src="pictures/03-edit-mode.png" width="240" alt="Edit mode with × badges on tiles, Done pill top-right, settings gear bottom-right"></a><br>
       <sub><b>Edit mode</b><br>Long-press a tile: × badges, Done pill, settings gear</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="33%">
-      <a href="pictures/03-settings-layout-modes.png"><img src="pictures/03-settings-layout-modes.png" width="240" alt="Settings overlay showing the three placement modes: Auto-fill, Snap to grid, Place anywhere"></a><br>
-      <sub><b>Settings</b><br>Page count, dock toggle, and the three placement modes</sub>
+      <a href="pictures/04-settings-layout-modes.png"><img src="pictures/04-settings-layout-modes.png" width="240" alt="Settings overlay showing the three placement modes: Auto-fill, Snap to grid, Place anywhere"></a><br>
+      <sub><b>Settings</b><br>Dock toggle and the three placement modes (pages are managed from edit mode)</sub>
     </td>
     <td align="center" width="33%">
       <a href="pictures/05-spread-home-button.png"><img src="pictures/05-spread-home-button.png" width="240" alt="Right-edge app spread with the HomeSpike home button at the bottom"></a><br>
@@ -49,7 +45,7 @@ HomeSpike is loaded **inside the lomiri shell process** as the background layer 
 
 ## Device support
 
-Works on **any Ubuntu Touch 24.04 (noble) device running Lomiri**, regardless of CPU architecture. Built and tested on the OnePlus Nord N100 (`billie2`, aarch64); the design has no device-specific assumptions and the install pushes plain QML files that lomiri loads via its own QML import paths.
+Works on **any Ubuntu Touch 24.04 (noble) device running Lomiri**, regardless of CPU architecture. Built and tested on the Poco X3 NFC (`surya`, aarch64); the design has no device-specific assumptions and the install pushes plain QML files that lomiri loads via its own QML import paths.
 
 Requirements:
 
@@ -64,18 +60,20 @@ What's **not** guaranteed:
 - **Older or pre-noble UT releases.** The install drops complete replacement copies of four shell QML files (Shell, Stage, Spread, Drawer). A major Lomiri rewrite would mean re-syncing those copies. Re-run `install.sh` and watch for QML errors in `journalctl --user -u lomiri`.
 - **Non-Lomiri shells** (Plasma Mobile on Droidian, Phosh, Sailfish, postmarketOS Sxmo) — entirely different shell stacks, would need a separate port.
 
-If you run it on a device the README doesn't list and it works (or doesn't), let us know on [Discord](https://discord.gg/YVcsHXSCYG) — we'll add the device to the tested list.
+If you run it on a device the README doesn't list, expect to verify the four shell overrides apply cleanly — watch `journalctl --user -u lomiri` for QML errors after install.
 
 ## What you get after `install.sh`
 
 - Boot → unlock → **HomeSpike is already there**, fullscreen, under everything.
 - Tap the **Ubuntu logo** (BFB) on the launcher → minimizes any open app to reveal HomeSpike.
 - Right-edge swipe → app spread, now with a **home button** at the bottom to return to HomeSpike.
-- Bottom **dock** (optional, configurable) for up to 5 apps. When the dock is on, Lomiri's left launcher panel auto-collapses so HomeSpike owns the full screen.
-- App grid (4 columns) of every installed app, swipeable across 1–5 pages.
-- Long-press any tile to enter **edit mode**: drag to reorder, tap the × to hide from HomeSpike, drag to the bottom dock or between pages.
-- Long-press any app in the **Lomiri drawer** → "Add to HomeSpike?" prompt → it appears on your home within a couple seconds.
-- **Three placement modes** — Auto-fill, Snap to grid, Place anywhere — each remembers its own layout, so switching modes never loses what you set up before.
+- Bottom **dock** (optional) for up to 5 apps.
+- App grid (4 columns) of every installed app, swipeable across **1–5 pages**.
+- Long-press any tile or empty space to toggle **edit mode**.
+- **Add and remove pages** from edit mode.
+- **Folders** — drop one app on top of another to make a folder; name it in the popup. Open a folder to launch, rename, rearrange, add, or pull apps back out. (See [Folders](#folders).)
+- Long-press any app in the **Lomiri drawer** to add it to homespike.
+- **Three placement modes** — Auto-fill, Snap to grid, Place anywhere.
 
 ## Placement modes
 
@@ -88,6 +86,21 @@ Pick one in Settings (open edit mode → tap the gear in the bottom-right):
 | **Place anywhere** | No grid. Drop anywhere; icons can overlap. Maximum freedom, minimum guard-rails.                                                            |
 
 Switching modes preserves each mode's last saved layout. Flipping back to a mode you used before restores exactly what you had. First-time visits seed from your auto-fill layout so you're never dropped on a blank page.
+
+## Folders
+
+Folders group apps on the grid and work in all three placement modes.
+
+- **Create** — drag one app on top of another. A popup asks for a name (or Cancel). The folder takes the target's spot and shows a 2×2 preview of its contents.
+- **Open** — tap a folder to open it. The name sits above a translucent card of the member apps; tap an app to launch it. Tapping a folder works in edit mode too, so you can open it to make changes.
+- **Rename** — tap the name above the open folder and type.
+- **Add more** — drag another app onto a folder to drop it in (no popup).
+- **Rearrange inside** — long-press a member, then drag to reorder it within the folder.
+- **Pull an app out** — drag a member past the card edge; the folder fades away to reveal the grid so you can drop the app wherever you want.
+- **Auto-dissolve** — remove apps until one is left and the folder turns back into a normal icon; remove the last and it's gone.
+- **Delete** — the folder's edit-mode × removes the whole folder and its apps from HomeSpike (the apps stay installed and can be re-added from the drawer).
+
+Close the open folder by tapping outside it. Folders live on the grid only — they can't be placed in the dock.
 
 ## How it works
 
@@ -152,7 +165,7 @@ PIN=<sudo-pin> LOMIRI=1 ./deploy/refresh.sh
 PIN=<sudo-pin> ./deploy/uninstall.sh
 ```
 
-The `PIN` is the same one used for the existing `n100-be2012-crossflash/installer/*.sh` scripts. `adb` is discovered in this order: `$ADB` env override → on `PATH` → `research/n100-be2012-crossflash/host-tools/`.
+The `PIN` is your phablet sudo PIN (Settings → Privacy → Security). `adb` is discovered via the `$ADB` env override, then your `PATH`.
 
 ## Known limitations / next steps
 
@@ -163,6 +176,6 @@ The `PIN` is the same one used for the existing `n100-be2012-crossflash/installe
 
 ## Tested devices
 
-| Device            | Codename | Arch    | UT version  | Notes                                                               |
-| ----------------- | -------- | ------- | ----------- | ------------------------------------------------------------------- |
-| OnePlus Nord N100 | billie2  | aarch64 | 24.04 noble | Reference device. Cross-flashed BE2012; see n100-be2012-crossflash. |
+| Device       | Codename | Arch    | UT version  | Notes            |
+| ------------ | -------- | ------- | ----------- | ---------------- |
+| Poco X3 NFC  | surya    | aarch64 | 24.04 noble | Reference device |
