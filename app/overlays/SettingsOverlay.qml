@@ -1,9 +1,9 @@
 /**
  * @file SettingsOverlay
  * @description Full-screen modal showing HomeSpike user-configurable
- *   settings: page count stepper and bottom-dock toggle. Both controls
- *   emit signals on user action — the parent owns the side effects
- *   (re-running rebuildVisible, etc.) so this module stays UI-only.
+ *   settings: bottom-dock toggle and tile layout mode. Controls emit signals
+ *   on user action — the parent owns the side effects (re-running
+ *   rebuildVisible, etc.) so this module stays UI-only.
  *
  * @status Stable.
  * @issues None
@@ -15,20 +15,11 @@ import Lomiri.Components 1.3
 Rectangle {
     id: root
 
-    /** Current page count (bound to persist.pageCount externally). */
-    property int pageCount: 1
-
-    /** Hard cap on page count, displayed in the help text. */
-    property int maxPages: 5
-
     /** Current dock-enabled state (bound to persist.dockEnabled). */
     property bool dockEnabled: false
 
     /** Current tile placement mode (bound to persist.placementMode). */
     property string placementMode: "autoFill"
-
-    /** Emitted when the user changes the page count via +/-. */
-    signal pageCountAdjusted(int newCount)
 
     /** Emitted when the user flips the dock switch. */
     signal dockToggled(bool enabled)
@@ -75,48 +66,6 @@ Rectangle {
                 color: "white"
                 font.bold: true
                 fontSize: "large"
-            }
-
-            // ---- Pages stepper ----
-            Row {
-                width: parent.width
-                spacing: units.gu(2)
-                Column {
-                    width: parent.width - pagesStepper.width - units.gu(2)
-                    Label { text: "Pages"; color: "white" }
-                    Label {
-                        text: "Number of swipeable home screens (1–" + root.maxPages + "). When reduced, extra pages merge into the last."
-                        color: "#9fa9c0"
-                        fontSize: "small"
-                        wrapMode: Text.WordWrap
-                        width: parent.width
-                    }
-                }
-                Row {
-                    id: pagesStepper
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: units.gu(0.5)
-                    Button {
-                        text: "−"
-                        width: units.gu(4)
-                        enabled: root.pageCount > 1
-                        onClicked: root.pageCountAdjusted(root.pageCount - 1)
-                    }
-                    Label {
-                        text: root.pageCount
-                        color: "white"
-                        font.bold: true
-                        width: units.gu(3)
-                        horizontalAlignment: Text.AlignHCenter
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Button {
-                        text: "+"
-                        width: units.gu(4)
-                        enabled: root.pageCount < root.maxPages
-                        onClicked: root.pageCountAdjusted(root.pageCount + 1)
-                    }
-                }
             }
 
             // ---- Dock toggle ----

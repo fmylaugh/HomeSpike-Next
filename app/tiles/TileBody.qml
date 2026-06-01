@@ -38,7 +38,7 @@ Item {
     // ---- Folder fields (kind === "folder") ----
     /** "app" (single icon, launches) or "folder" (2x2 preview, opens). */
     property string kind: "app"
-    /** Stable folder id — the drag key and open/dissolve target. */
+    /** Stable folder id — the drag key and open/delete target. */
     property string folderId: ""
     /** Folder display name (shown as the label). */
     property string folderName: ""
@@ -65,8 +65,9 @@ Item {
     /** Emitted when the user taps a folder (not in edit mode) — open it. */
     signal folderOpenRequested(string folderId)
 
-    /** Emitted when the user taps the X badge on a folder — dissolve it. */
-    signal folderDissolveRequested(string folderId)
+    /** Emitted when the user taps the X badge on a folder — delete it (the
+     *  folder and its apps are removed from home). */
+    signal folderDeleteRequested(string folderId)
 
     /** Emitted on long-press while NOT in edit mode (caller should enable it). */
     signal editModeRequested()
@@ -93,14 +94,20 @@ Item {
         property real pressX: 0
         property real pressY: 0
         property bool dragStarted: false
+        // True once this gesture became a drag, so onClicked (which still fires
+        // on release) can tell a real tap from a drag-and-release.
+        property bool dragMoved: false
         readonly property real dragThreshold: units.gu(2)
 
         onClicked: {
-            if (body.editMode) return;
+            if (dragMoved) return;  // this was a drag, not a tap
+            // Folders open on tap even in edit mode — that's how you get inside
+            // to rearrange/remove. Apps still never launch in edit mode.
             if (body.kind === "folder") {
                 body.folderOpenRequested(body.folderId);
                 return;
             }
+            if (body.editMode) return;
             body.launchRequested(body.appId);
             Qt.openUrlExternally("application:///" + body.appId + ".desktop");
         }
@@ -112,6 +119,7 @@ Item {
             pressX = mouseX;
             pressY = mouseY;
             dragStarted = false;
+            dragMoved = false;
             // Defensive: if a previous drag's onReleased never fired
             // (delegate destroyed during a cross-page scroll), clear
             // leftover state without persisting it.
@@ -124,6 +132,7 @@ Item {
             if (!dragStarted) {
                 if (Math.sqrt(dx*dx + dy*dy) < dragThreshold) return;
                 dragStarted = true;
+                dragMoved = true;
                 var startPt = mapToItem(controller, mouseX, mouseY);
                 // Drag key is the folderId for folders, appId for apps. The
                 // floating-icon preview uses the first member icon for folders.
@@ -232,7 +241,7 @@ Item {
             }
 
             // Remove badge ("×") — top-left corner, edit mode only.
-            // Dissolves a folder; hides an app from home.
+            // Deletes a folder (and its apps); hides an app from home.
             Rectangle {
                 visible: body.editMode
                 anchors {
@@ -261,7 +270,7 @@ Item {
                     // Slightly larger hit target than the visible circle
                     anchors.margins: -units.gu(0.5)
                     onClicked: {
-                        if (body.kind === "folder") body.folderDissolveRequested(body.folderId);
+                        if (body.kind === "folder") body.folderDeleteRequested(body.folderId);
                         else body.removeRequested(body.appId, body.appName);
                     }
                 }

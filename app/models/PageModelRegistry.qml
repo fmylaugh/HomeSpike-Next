@@ -523,6 +523,41 @@ Item {
     }
 
     /**
+     * Delete a whole page and eliminate its icons: every app shown on the page
+     * (folder members included) is hidden, the page's saved layout is dropped
+     * from pageData, and the pages after it shift down. Never removes the last
+     * remaining page. Hidden apps stay installed (re-addable from the Drawer).
+     */
+    function deletePage(pageIdx) {
+        if (persist.pageCount <= 1) return;
+        if (pageIdx < 0 || pageIdx >= persist.pageCount) return;
+
+        // Hide every app on the page (members of folders too).
+        var hidden = persist.readJson(persist.hiddenAppIds, []);
+        var m = pageModels[pageIdx];
+        for (var i = 0; i < m.count; ++i) {
+            var r = m.get(i);
+            if (r.kind === "folder") {
+                var fa = _parseApps(r.appsJson);
+                for (var j = 0; j < fa.length; ++j) {
+                    if (hidden.indexOf(fa[j]) === -1) hidden.push(fa[j]);
+                }
+            } else if (r.appId) {
+                if (hidden.indexOf(r.appId) === -1) hidden.push(r.appId);
+            }
+        }
+        persist.hiddenAppIds = persist.writeJson(hidden);
+
+        // Drop the page's saved layout (all modes) and shift the rest down.
+        var data = persist.readPageData();
+        if (pageIdx < data.length) data.splice(pageIdx, 1);
+        persist.pageData = persist.writeJson(data);
+
+        persist.pageCount = persist.pageCount - 1;
+        rebuildVisible();
+    }
+
+    /**
      * Append a batch of appIds as if the user had asked to add each one.
      * Un-hides any previously-removed entries, skips already-placed ones,
      * and respects the active placement mode for where the new tile sits.
@@ -703,18 +738,21 @@ Item {
     }
 
     /**
-     * Remove an app from a folder. The app returns to the grid. Auto-dissolve:
-     * if one member remains the folder becomes that single app at its slot; if
-     * none remain the folder is removed. Persists.
+     * Remove an app from a folder, applying auto-dissolve (1 member left →
+     * folder becomes that single app at its slot; 0 left → folder removed).
+     * Does NOT place the removed app anywhere and does NOT persist — the caller
+     * decides where the app goes (first-free cell, or a drop point) and
+     * persists once. Returns the folder's page index, or -1 if not found.
      */
-    function removeAppFromFolder(folderId, appId) {
+    function takeMemberFromFolder(folderId, appId) {
         var loc = _findRowByFolderId(folderId);
-        if (!loc) return;
+        if (!loc) return -1;
         var m = pageModels[loc.page];
         var f = m.get(loc.index);
         var apps = _parseApps(f.appsJson);
         var i = apps.indexOf(appId);
-        if (i >= 0) apps.splice(i, 1);
+        if (i < 0) return loc.page;   // not a member — nothing to remove
+        apps.splice(i, 1);
 
         if (apps.length === 0) {
             m.remove(loc.index, 1);
@@ -726,10 +764,26 @@ Item {
         } else {
             m.setProperty(loc.index, "appsJson", JSON.stringify(apps));
         }
+        return loc.page;
+    }
 
-        // The removed app returns to the grid on the folder's page.
+    /**
+     * Remove an app from a folder; the app returns to the grid (first free cell
+     * on the folder's page). Used by the open-folder "×". Persists.
+     */
+    function removeAppFromFolder(folderId, appId) {
+        var page = takeMemberFromFolder(folderId, appId);
+        if (page < 0) return;
         var rm = _findSourceApp(appId);
-        if (rm) _placeAtFirstFreeCell(loc.page, rm);
+        if (rm) _placeAtFirstFreeCell(page, rm);
+        persistOrder();
+    }
+
+    /** Replace a folder's member list/order (appIds). Persists. */
+    function setFolderApps(folderId, ids) {
+        var loc = _findRowByFolderId(folderId);
+        if (!loc) return;
+        pageModels[loc.page].setProperty(loc.index, "appsJson", JSON.stringify(ids));
         persistOrder();
     }
 
@@ -743,17 +797,24 @@ Item {
         persistOrder();
     }
 
-    /** Dissolve a folder entirely — release all members to the grid. Persists. */
-    function dissolveFolder(folderId) {
+    /**
+     * Delete a folder and its contents from HomeSpike: the folder tile is
+     * removed and every member app is hidden (NOT scattered back onto the
+     * grid). Apps stay installed and can be re-added from the Drawer. Persists.
+     */
+    function deleteFolder(folderId) {
         var loc = _findRowByFolderId(folderId);
         if (!loc) return;
-        var m = pageModels[loc.page];
-        var apps = _parseApps(m.get(loc.index).appsJson);
-        m.remove(loc.index, 1);
+        var apps = _parseApps(pageModels[loc.page].get(loc.index).appsJson);
+
+        var hidden = persist.readJson(persist.hiddenAppIds, []);
         for (var i = 0; i < apps.length; ++i) {
-            var a = _findSourceApp(apps[i]);
-            if (a) _placeAtFirstFreeCell(loc.page, a);
+            if (hidden.indexOf(apps[i]) === -1) hidden.push(apps[i]);
         }
-        persistOrder();
+        persist.hiddenAppIds = persist.writeJson(hidden);
+
+        pageModels[loc.page].remove(loc.index, 1);  // drop the folder tile
+        persistOrder();    // write clean pageData (no folder, no member rows)
+        rebuildVisible();  // re-apply the hidden set so members stay gone
     }
 }

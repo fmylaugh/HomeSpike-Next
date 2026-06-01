@@ -61,6 +61,9 @@ Item {
     // "app" or "folder" — folders can be reordered/moved but never merge into
     // another tile or get dropped into the dock.
     property string sourceKind:  "app"
+    // Member preview icons (up to 4) when dragging a folder, so the floating
+    // visual shows the folder itself rather than its first app.
+    property var    sourceFolderIcons: []
 
     /** Emitted when an app is dropped onto another app — caller shows the
      *  name popup, then calls pages.createFolder on confirm. */
@@ -84,38 +87,68 @@ Item {
     anchors.fill: parent
 
     // ============================================================
-    // Edge-flip: after holding near the screen edge for 600ms, jump
-    // to the adjacent page AND carry the dragged icon with us.
+    // Edge-flip: while holding the dragged tile near a screen edge, page
+    // through the launcher so the user can keep carrying it. We ONLY scroll
+    // the view here — the dragged tile stays on its original page (opacity 0)
+    // so its MouseArea keeps the touch grab; the actual move to the dropped-on
+    // page happens at release in endDrag. pagesView.cacheBuffer keeps every
+    // page instantiated so the source delegate survives the scroll.
+    //
+    // repeat:true keeps flipping every interval while held, and the target
+    // wraps around: past the last page loops to the first (and vice versa).
     // ============================================================
     Timer {
         id: edgeFlipTimer
         interval: 600
+        repeat: true
         property int direction: 0   // -1 left, +1 right
 
         onTriggered: {
-            var target = pagesView.currentPage + direction;
-            if (target < 0 || target >= persist.pageCount) return;
-
-            if (_canCarryToPage(target)) _carryToPage(target);
+            if (direction === 0 || !root.dragging) { stop(); return; }
+            var n = persist.pageCount;
+            if (n <= 1) { stop(); return; }
+            var target = (pagesView.currentPage + direction + n) % n;  // wrap
             pagesView.positionViewAtIndex(target, ListView.Beginning);
         }
     }
 
-    function _canCarryToPage(targetPage) {
-        return root.dragging
-            && sourceContainer === "grid"
-            && sourcePage !== targetPage
-            && sourcePage >= 0
-            && sourceIndex >= 0
-            && sourceIndex < pages.pageModels[sourcePage].count;
-    }
+    /**
+     * Move the source grid row to `dropPage` at the current drop point, using
+     * the active mode's placement. Called at release (endDrag) — never mid-drag,
+     * so the dragged delegate isn't destroyed while it owns the touch.
+     *
+     * Copies the ENTIRE source row (not a freshly-built app row) so a folder
+     * keeps its identity + members — `_newGridRowForCurrentMode` only knows the
+     * app drag fields and would turn a carried folder into a single broken tile.
+     */
+    function _carryToPageAt(dropPage) {
+        if (sourcePage < 0 || sourceIndex < 0) return;
+        if (sourceIndex >= pages.pageModels[sourcePage].count) return;
 
-    function _carryToPage(targetPage) {
-        var item = _newGridRowForCurrentMode(targetPage);
+        var src = pages.pageModels[sourcePage].get(sourceIndex);
+        var item = {
+            appId: src.appId, name: src.name, icon: src.icon,
+            col: -1, row: -1, xFrac: -0.5, yFrac: -0.5,
+            kind: src.kind, folderId: src.folderId,
+            folderName: src.folderName, appsJson: src.appsJson
+        };
+        // Position on the drop page from the release point + active mode.
+        var mode = persist.placementMode;
+        if (mode === "snap") {
+            var cell = _computeGridCell(lastDragX, lastDragY);
+            var c = cell ? pages.nearestFreeCell(dropPage, cell.col, cell.row)
+                         : pages.firstFreeCell(dropPage);
+            item.col = c.col;
+            item.row = c.row;
+        } else if (mode === "free") {
+            var lp = _toPagesViewLocal(lastDragX, lastDragY);
+            var w = Math.max(1, pagesView.width);
+            var h = Math.max(1, pagesView.height);
+            item.xFrac = Math.min(0.95, Math.max(0.05, lp.x / w));
+            item.yFrac = Math.min(0.95, Math.max(0.05, lp.y / h));
+        }
         pages.pageModels[sourcePage].remove(sourceIndex, 1);
-        pages.pageModels[targetPage].append(item);
-        sourcePage = targetPage;
-        sourceIndex = pages.pageModels[targetPage].count - 1;
+        pages.pageModels[dropPage].append(item);
     }
 
     /**
@@ -161,6 +194,38 @@ Item {
         return item;
     }
 
+    /**
+     * Drop a standalone app onto the current page at a point in root/controller
+     * coordinates, using the active placement mode (snap → nearest free cell to
+     * the point; free → fractional point; autoFill → appended). Persists. Used
+     * by the folder overlay's drag-out so the app lands where it was released.
+     */
+    function placeAppAtPoint(appId, name, icon, rootX, rootY) {
+        var page = pagesView.currentPage;
+        if (page < 0 || page >= persist.pageCount) page = 0;
+        var mode = persist.placementMode;
+        var item = {
+            appId: appId, name: name, icon: icon,
+            col: -1, row: -1, xFrac: -0.5, yFrac: -0.5,
+            kind: "app", folderId: "", folderName: "", appsJson: ""
+        };
+        if (mode === "snap") {
+            var cell = _computeGridCell(rootX, rootY);
+            var c = cell ? pages.nearestFreeCell(page, cell.col, cell.row)
+                         : pages.firstFreeCell(page);
+            item.col = c.col;
+            item.row = c.row;
+        } else if (mode === "free") {
+            var lp = _toPagesViewLocal(rootX, rootY);
+            var w = Math.max(1, pagesView.width);
+            var h = Math.max(1, pagesView.height);
+            item.xFrac = Math.min(0.95, Math.max(0.05, lp.x / w));
+            item.yFrac = Math.min(0.95, Math.max(0.05, lp.y / h));
+        }
+        pages.pageModels[page].append(item);  // autoFill: position by order
+        pages.persistOrder();
+    }
+
     // ============================================================
     // Public API: called from TileBody MouseArea handlers
     // ============================================================
@@ -186,6 +251,7 @@ Item {
         sourceName = name;
         sourceIcon = icon;
         sourceKind = "app";
+        sourceFolderIcons = [];
         // Snapshot the pre-drag positional fields so snap-mode collision
         // resolution can swap (give the displaced tile our old cell)
         // instead of overwriting. Safe to read on dock rows too; sentinels.
@@ -196,6 +262,18 @@ Item {
             sourcePrevRow   = (typeof r.row   === "number") ? r.row   : -1;
             sourcePrevXFrac = (typeof r.xFrac === "number") ? r.xFrac : -1;
             sourcePrevYFrac = (typeof r.yFrac === "number") ? r.yFrac : -1;
+            // For a folder, gather member icons so the floating visual renders
+            // the folder preview instead of a single app icon.
+            if (sourceKind === "folder") {
+                var fids = [];
+                try { fids = JSON.parse(r.appsJson || "[]"); } catch (e) { fids = []; }
+                var ficons = [];
+                for (var fi = 0; fi < fids.length && ficons.length < 4; ++fi) {
+                    var info = pages.appInfo(fids[fi]);
+                    if (info) ficons.push(info.icon);
+                }
+                sourceFolderIcons = ficons;
+            }
         } else {
             sourcePrevCol = -1; sourcePrevRow = -1;
             sourcePrevXFrac = -1; sourcePrevYFrac = -1;
@@ -225,6 +303,15 @@ Item {
         if (_isOverDock(x, y)) {
             mergeTargetIndex = -1;
             _handleOverDock(x, y);
+            return;
+        }
+
+        // Mid cross-page carry: the view is showing a page other than the
+        // source's. Don't reorder/merge on the (off-screen) source page — just
+        // track the finger and let edge-flip keep paging. The actual move to
+        // the viewed page happens at release.
+        if (sourceContainer === "grid" && pagesView.currentPage !== sourcePage) {
+            mergeTargetIndex = -1;
             return;
         }
 
@@ -269,6 +356,13 @@ Item {
                 }
             } else if (sourceContainer === "dock" && !overDock) {
                 _commitDockToGrid();
+            } else if (sourceContainer === "grid" && !overDock
+                       && pagesView.currentPage >= 0
+                       && pagesView.currentPage < persist.pageCount
+                       && pagesView.currentPage !== sourcePage) {
+                // Released on a different page than it started → relocate it
+                // there at the drop point (no folder-merge across pages in v1).
+                _carryToPageAt(pagesView.currentPage);
             } else if (sourceContainer === "grid" && !overDock) {
                 // Did we drop on top of another tile? (apps only — a folder
                 // dragged onto a tile just reorders.)
@@ -305,6 +399,7 @@ Item {
         sourcePage  = -1;
         sourceContainer = "";
         sourceKind = "app";
+        sourceFolderIcons = [];
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -324,6 +419,7 @@ Item {
         sourceContainer = "";
         sourceAppId = "";
         sourceKind = "app";
+        sourceFolderIcons = [];
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -664,21 +760,58 @@ Item {
     }
 
     // ============================================================
-    // Visual: the floating icon that tracks the drag cursor
+    // Visual: the floating tile that tracks the drag cursor. Mirrors the
+    // stationary tile — a single icon for apps, the 2x2 preview for folders.
     // ============================================================
-    LomiriShape {
+    Item {
         id: floatingIcon
         visible: root.dragging
         width: units.gu(6) * 1.15
         height: 7.5 / 8 * width
-        radius: "medium"
-        borderSource: "undefined"
-        sourceFillMode: LomiriShape.PreserveAspectCrop
         opacity: 0.92
-        source: Image {
-            asynchronous: true
-            sourceSize.width: floatingIcon.width
-            source: root.sourceIcon
+
+        // App: single icon.
+        LomiriShape {
+            anchors.fill: parent
+            visible: root.sourceKind !== "folder"
+            radius: "medium"
+            borderSource: "undefined"
+            sourceFillMode: LomiriShape.PreserveAspectCrop
+            source: Image {
+                asynchronous: true
+                sourceSize.width: floatingIcon.width
+                source: root.sourceIcon
+            }
+        }
+
+        // Folder: frosted plate with up to 4 mini icons (matches TileBody).
+        Rectangle {
+            id: floatFolderPlate
+            anchors.fill: parent
+            visible: root.sourceKind === "folder"
+            radius: units.gu(1.2)
+            color: "#40ffffff"
+            Grid {
+                anchors.centerIn: parent
+                columns: 2
+                rowSpacing: units.gu(0.4)
+                columnSpacing: units.gu(0.4)
+                Repeater {
+                    model: root.sourceFolderIcons
+                    delegate: LomiriShape {
+                        width: (floatFolderPlate.width - units.gu(1.6)) / 2
+                        height: 7.5 / 8 * width
+                        radius: "small"
+                        borderSource: "undefined"
+                        sourceFillMode: LomiriShape.PreserveAspectCrop
+                        source: Image {
+                            asynchronous: true
+                            sourceSize.width: width
+                            source: modelData
+                        }
+                    }
+                }
+            }
         }
     }
 }

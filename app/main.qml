@@ -150,6 +150,10 @@ Item {
         interactive: !dragController.dragging
         clip: true
         model: persist.pageCount
+        // Keep every page instantiated so a tile dragged across pages isn't
+        // destroyed when its origin page scrolls off-screen — that would drop
+        // the touch grab and strand the drag. Cheap for a handful of pages.
+        cacheBuffer: width * Math.max(1, persist.pageCount)
 
         // Index of currently centered page (for indicators + drag drop target)
         property int currentPage: Math.round(contentX / Math.max(1, width))
@@ -175,6 +179,17 @@ Item {
             height: pagesView.height
             property int pageIndex: index
             readonly property real cellW: (width - pagesView.gridLeftMargin - pagesView.gridRightMargin) / pages.cols
+
+            // Long-press bare grid space toggles edit mode. Declared BEFORE the
+            // tile Repeater so tiles (declared after) win presses on their own
+            // area; this only fires on the empty background. No preventStealing,
+            // so the ListView can still flick between pages.
+            MouseArea {
+                anchors.fill: parent
+                enabled: root.uiEnabled
+                pressAndHoldInterval: 500
+                onPressAndHold: root.editMode = !root.editMode
+            }
 
             // One Repeater drives all three placement modes — only the
             // x/y bindings differ based on persist.placementMode.
@@ -283,8 +298,8 @@ Item {
                             return icons;
                         }
                         onRemoveRequested: (id, name) => confirmRemove.show(id, name)
-                        onFolderOpenRequested: (fid) => folderOverlay.open(fid)
-                        onFolderDissolveRequested: (fid) => pages.dissolveFolder(fid)
+                        onFolderOpenRequested: (fid) => folderOverlay.open(fid, root.editMode)
+                        onFolderDeleteRequested: (fid) => pages.deleteFolder(fid)
                         onEditModeRequested: root.editMode = true
                         onLaunchRequested: (id) => root.launchRequested(id)
                     }
@@ -405,15 +420,40 @@ Item {
         onDismissed: root.editMode = false
     }
 
-    SettingsGearButton {
-        active: root.uiEnabled && root.editMode
-        bottomOffset: persist.dockEnabled ? root.dockHeight + units.gu(2.5) : units.gu(4)
+    // Bottom-right edit-mode button stack (top → bottom: trash, +, gear).
+    // A Column so hidden buttons collapse cleanly (no gaps) — the trash hides
+    // when only one page is left, the "+" hides at the page cap.
+    Column {
+        id: editButtons
+        z: 250
+        spacing: units.gu(1.5)
         anchors {
             bottom: parent.bottom; right: parent.right
-            bottomMargin: bottomOffset
+            bottomMargin: persist.dockEnabled ? root.dockHeight + units.gu(2.5) : units.gu(4)
             rightMargin: units.gu(2)
         }
-        onTriggered: settingsOverlay.visible = true
+
+        DeletePageButton {
+            active: root.uiEnabled && root.editMode && persist.pageCount > 1
+            onTriggered: confirmDeletePage.show(pagesView.currentPage)
+        }
+
+        AddPageButton {
+            active: root.uiEnabled && root.editMode && persist.pageCount < pages.maxPages
+            onTriggered: {
+                pages.setPageCount(persist.pageCount + 1);
+                // Focus the freshly added (now last) page — deferred a tick so
+                // the ListView has taken in the new page count first.
+                Qt.callLater(function() {
+                    pagesView.positionViewAtIndex(persist.pageCount - 1, ListView.Beginning);
+                });
+            }
+        }
+
+        SettingsGearButton {
+            active: root.uiEnabled && root.editMode
+            onTriggered: settingsOverlay.visible = true
+        }
     }
 
     // ============================================================
@@ -435,12 +475,9 @@ Item {
     // ============================================================
     SettingsOverlay {
         id: settingsOverlay
-        pageCount: persist.pageCount
-        maxPages: pages.maxPages
         dockEnabled: persist.dockEnabled
         placementMode: persist.placementMode
         leftReserve: root.leftReserve
-        onPageCountAdjusted: (n) => pages.setPageCount(n)
         onDockToggled: (on) => pages.toggleDock(on)
         // PageModelRegistry's Connections watcher catches the persist
         // change and re-renders from the new mode's saved slot.
@@ -451,6 +488,20 @@ Item {
         id: confirmRemove
         leftReserve: root.leftReserve
         onConfirmed: (appId) => pages.hideApp(appId)
+    }
+
+    ConfirmDeletePageOverlay {
+        id: confirmDeletePage
+        leftReserve: root.leftReserve
+        onConfirmed: (pageIndex) => {
+            pages.deletePage(pageIndex);
+            // Land on a valid page (the shifted-in one, or the new last) once
+            // the ListView has taken in the reduced page count.
+            Qt.callLater(function() {
+                pagesView.positionViewAtIndex(
+                    Math.min(pageIndex, persist.pageCount - 1), ListView.Beginning);
+            });
+        }
     }
 
     // ----- Folder overlays -----
@@ -464,10 +515,11 @@ Item {
         onCancelled: () => pages.rebuildVisible()
     }
 
-    // Open-folder view: launch / rename / remove members.
+    // Open-folder view: launch / rename / remove / reorder / drag-out members.
     FolderOverlay {
         id: folderOverlay
         pages: pages
+        dragController: dragController
         leftReserve: root.leftReserve
         onLaunchRequested: (id) => root.launchRequested(id)
     }
