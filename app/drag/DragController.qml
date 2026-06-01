@@ -109,9 +109,9 @@ Item {
     /**
      * Build a row payload for an append into pages.pageModels[targetPage]
      * that's appropriate for the active placement mode. autoFill ignores
-     * position fields (delegate reads `index`); snap picks the first free
-     * cell on the target page; free uses the current drag point converted
-     * to xFrac/yFrac on the target page.
+     * position fields (delegate reads `index`); snap lands on the cell nearest
+     * the drop point; free uses the current drag point converted to xFrac/yFrac
+     * on the target page.
      */
     function _newGridRowForCurrentMode(targetPage) {
         var mode = persist.placementMode;
@@ -127,7 +127,11 @@ Item {
             yFrac: -0.5
         };
         if (mode === "snap") {
-            var c = pages.firstFreeCell(targetPage);
+            // Land on the cell under the drop point, not the first free slot.
+            // If that exact cell is taken, the nearest empty one wins.
+            var cell = _computeGridCell(lastDragX, lastDragY);
+            var c = cell ? pages.nearestFreeCell(targetPage, cell.col, cell.row)
+                         : pages.firstFreeCell(targetPage);
             item.col = c.col;
             item.row = c.row;
         } else if (mode === "free") {
@@ -215,13 +219,23 @@ Item {
     function endDrag() {
         edgeFlipTimer.stop();
         edgeFlipTimer.direction = 0;
-        targetingDock = false;
-        if (sourceIndex >= 0) {
-            if (sourceContainer === "grid" && persist.placementMode === "snap") {
+        if (sourceIndex >= 0 && sourceContainer !== "") {
+            // Cross-container moves are committed HERE, not during moveDrag:
+            // removing the source row mid-drag destroys the delegate whose
+            // MouseArea owns the touch, which kills onReleased and strands
+            // the drag. By the time we're in endDrag the release already
+            // fired, so it's safe to mutate the models now.
+            var overDock = _isOverDock(lastDragX, lastDragY);
+            if (sourceContainer === "grid" && overDock) {
+                _commitGridToDock(lastDragX, lastDragY);
+            } else if (sourceContainer === "dock" && !overDock) {
+                _commitDockToGrid();
+            } else if (sourceContainer === "grid" && persist.placementMode === "snap") {
                 _snapResolveCollision();
             }
             pages.persistOrder();
         }
+        targetingDock = false;
         sourceIndex = -1;
         sourcePage  = -1;
         sourceContainer = "";
@@ -296,18 +310,37 @@ Item {
 
     function _handleOverDock(x, y) {
         targetingDock = sourceContainer !== "dock";
-        var dp = root.mapToItem(dockBar, x, y);
 
         if (sourceContainer === "dock") {
+            // Reordering within the dock is a model.move() — it preserves the
+            // dragged delegate, so it's safe to do live.
+            var dp = root.mapToItem(dockBar, x, y);
             _reorderInDock(dp.x);
-        } else if (sourceContainer === "grid") {
-            _moveGridToDock();
         }
+        // grid source over dock: do NOT move now — that would destroy the
+        // dragged grid delegate. Just light up the dock; the move commits in
+        // endDrag once the release has fired. The source tile stays in the
+        // grid at opacity 0 so its MouseArea keeps tracking the finger.
+    }
+
+    /**
+     * Map an x coordinate (in dockBar-local space) to a dock slot index,
+     * honouring the live per-item width and the fact that the icon Row is
+     * centred in dockBar. `extraItems` widens the assumed row by N items —
+     * pass 1 when computing an insertion slot for a tile not yet in the dock
+     * so its pre-insert width matches what the user sees.
+     */
+    function _dockIndexAt(dockX, extraItems) {
+        var n = dockBar.dockCount + (extraItems || 0);
+        if (n <= 0) return 0;
+        var cellW    = dockBar.dockItemW + dockBar.dockGap;
+        var rowWidth = n * dockBar.dockItemW + (n - 1) * dockBar.dockGap;
+        var rowLeft  = (dockBar.width - rowWidth) / 2;
+        return Math.floor((dockX - rowLeft) / cellW);
     }
 
     function _reorderInDock(dockX) {
-        var dockCellW = units.gu(10);
-        var targetIdx = Math.floor(dockX / dockCellW);
+        var targetIdx = _dockIndexAt(dockX, 0);
         if (targetIdx < 0) targetIdx = 0;
         if (targetIdx >= pages.dockApps.count) targetIdx = pages.dockApps.count - 1;
         if (targetIdx !== sourceIndex) {
@@ -316,18 +349,30 @@ Item {
         }
     }
 
-    function _moveGridToDock() {
+    /**
+     * Commit a grid→dock move at release time. Inserts at the dock slot under
+     * the drop point. No-op (tile stays in the grid) if the dock is full or
+     * the source row has gone missing. Called only from endDrag.
+     */
+    function _commitGridToDock(x, y) {
         if (pages.dockApps.count >= pages.dockMax) return;
+        if (sourcePage < 0 || sourceIndex < 0) return;
+        if (sourceIndex >= pages.pageModels[sourcePage].count) return;
+
+        var dp = root.mapToItem(dockBar, x, y);
+        // +1 item: the tile isn't in the dock yet, so size the row as if it
+        // already were to land the insertion under the finger.
+        var targetIdx = _dockIndexAt(dp.x, 1);
+        if (targetIdx < 0) targetIdx = 0;
+        if (targetIdx > pages.dockApps.count) targetIdx = pages.dockApps.count;
+
         pages.pageModels[sourcePage].remove(sourceIndex, 1);
-        pages.dockApps.append({
+        pages.dockApps.insert(targetIdx, {
             appId: sourceAppId,
             name:  sourceName,
             icon:  sourceIcon,
             col:   -1, row: -1, xFrac: -0.5, yFrac: -0.5
         });
-        sourceContainer = "dock";
-        sourcePage = -1;
-        sourceIndex = pages.dockApps.count - 1;
     }
 
     /**
@@ -337,7 +382,9 @@ Item {
     function _handleOverGrid(x, y) {
         targetingDock = false;
         if (sourceContainer === "dock") {
-            _moveDockToGrid();
+            // dock source over grid: defer to endDrag for the same delegate-
+            // destruction reason as grid→dock. The dock tile stays put at
+            // opacity 0 until release commits the move.
             return;
         }
         if (sourceContainer !== "grid") return;
@@ -431,7 +478,9 @@ Item {
         var p = _toPagesViewLocal(x, y);
         var leftMargin = units.gu(1);
         var gridWidth  = pagesView.width - 2 * leftMargin;
-        var cellH      = units.gu(11);
+        // Use the renderer's live row pitch (derived to tile the viewport)
+        // so a drop lands on the same row the grid actually draws.
+        var cellH      = pagesView.cellH;
         var cellW      = gridWidth / pages.cols;
 
         var pageX = p.x - leftMargin;
@@ -445,25 +494,24 @@ Item {
         if (col < 0) col = 0;
         if (col >= pages.cols) col = pages.cols - 1;
         if (row < 0) row = 0;
+        // Clamp to rows that actually fit so a low drop can't land a tile in
+        // an off-screen row.
+        if (row > pagesView.gridRows - 1) row = pagesView.gridRows - 1;
         return { col: col, row: row };
     }
 
-    function _moveDockToGrid() {
+    /**
+     * Commit a dock→grid move at release time. Drops onto the current page
+     * using the active mode's natural placement. No-op if the source row has
+     * gone missing. Called only from endDrag.
+     */
+    function _commitDockToGrid() {
+        if (sourceIndex < 0 || sourceIndex >= pages.dockApps.count) return;
         var dropPage = pagesView.currentPage;
         if (dropPage < 0 || dropPage >= persist.pageCount) return;
         var item = _newGridRowForCurrentMode(dropPage);
         pages.dockApps.remove(sourceIndex, 1);
         pages.pageModels[dropPage].append(item);
-        sourceContainer = "grid";
-        sourcePage = dropPage;
-        sourceIndex = pages.pageModels[dropPage].count - 1;
-        // Snapshot the new prev-cell so subsequent snap collision resolves
-        // consistently if the user keeps dragging across cells.
-        var rr = pages.pageModels[dropPage].get(sourceIndex);
-        sourcePrevCol   = rr.col;
-        sourcePrevRow   = rr.row;
-        sourcePrevXFrac = rr.xFrac;
-        sourcePrevYFrac = rr.yFrac;
     }
 
     // ============================================================

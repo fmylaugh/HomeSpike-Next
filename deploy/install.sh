@@ -97,8 +97,8 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
 
   echo --- overrides installed ---
   for f in Shell.qml Launcher/Drawer.qml Stage/Spread/Spread.qml Stage/Stage.qml; do
-    if [ -f /usr/share/lomiri/$f.orig ]; then
-      echo "  /usr/share/lomiri/$f -- backup at .orig"
+    if [ -f /usr/share/lomiri/\$f.orig ]; then
+      echo "  /usr/share/lomiri/\$f -- backup at .orig"
     fi
   done
   echo "  /usr/share/glib-2.0/schemas/com.lomiri.HomeSpike.gschema.xml -- new"

@@ -38,8 +38,9 @@ Item {
         property string hiddenAppIds: "[]"
         property string dockOrder:    "[]"
         property bool   dockEnabled:  false
-        // Height of the visible dock background plate, in grid units.
-        // 1.0 ≈ a thin line under the icons; 12.0 wraps the icons fully.
+        // Height (grid units) of the dock drop-target plate — the outline
+        // shown while dragging a tile onto the dock. No longer user-facing;
+        // 12.0 frames the full icon row. Kept persisted for back-compat.
         property real   dockBgHeight: 12.0
         // Active tile layout. "autoFill" = current left-to-right reflow;
         // "snap" = icons sit on a grid but can leave gaps; "free" = icons

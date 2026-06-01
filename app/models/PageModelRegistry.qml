@@ -315,6 +315,37 @@ Item {
     }
 
     /**
+     * Find the free {col,row} cell closest to a target cell on a page — used
+     * when a tile is dropped onto the grid so it lands where the user aimed.
+     * Returns the target itself if free; otherwise the nearest empty cell by
+     * grid distance; falls back to firstFreeCell if the page is full.
+     */
+    function nearestFreeCell(pageIdx, col, row) {
+        var occupied = {};
+        var m = pageModels[pageIdx];
+        for (var i = 0; i < m.count; ++i) {
+            var r = m.get(i);
+            if (typeof r.col === "number" && typeof r.row === "number"
+                && r.col >= 0 && r.row >= 0) {
+                occupied[r.col + "," + r.row] = true;
+            }
+        }
+        if (!occupied[col + "," + row]) return { col: col, row: row };
+
+        var rowMax = 8;  // matches firstFreeCell's soft cap
+        var best = null, bestDist = Infinity;
+        for (var rr = 0; rr < rowMax; ++rr) {
+            for (var cc = 0; cc < cols; ++cc) {
+                if (occupied[cc + "," + rr]) continue;
+                var dc = cc - col, dr = rr - row;
+                var d = dc * dc + dr * dr;
+                if (d < bestDist) { bestDist = d; best = { col: cc, row: rr }; }
+            }
+        }
+        return best || firstFreeCell(pageIdx);
+    }
+
+    /**
      * Auto-place a new entry on a page using whatever the active mode
      * considers natural: append for autoFill, first-free cell for snap,
      * roughly first-free cell mapped to xFrac/yFrac for free.

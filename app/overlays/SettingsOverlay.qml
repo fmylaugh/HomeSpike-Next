@@ -24,9 +24,6 @@ Rectangle {
     /** Current dock-enabled state (bound to persist.dockEnabled). */
     property bool dockEnabled: false
 
-    /** Current dock background height in grid units (bound to persist.dockBgHeight). */
-    property real dockBgHeight: 12.0
-
     /** Current tile placement mode (bound to persist.placementMode). */
     property string placementMode: "autoFill"
 
@@ -35,9 +32,6 @@ Rectangle {
 
     /** Emitted when the user flips the dock switch. */
     signal dockToggled(bool enabled)
-
-    /** Emitted as the user drags the dock-height slider. */
-    signal dockBgHeightAdjusted(real newGu)
 
     /** Emitted when the user picks a different layout mode. */
     signal placementModeAdjusted(string newMode)
@@ -219,34 +213,6 @@ Rectangle {
                                     }
                                 }
                             }
-                        }
-                    }
-                }
-            }
-
-            // ---- Dock background height slider ----
-            Column {
-                width: parent.width
-                spacing: units.gu(0.5)
-                visible: root.dockEnabled
-                Label { text: "Dock background height"; color: "white" }
-                Label {
-                    text: "Thin line under the icons → full wrap around them."
-                    color: "#9fa9c0"
-                    fontSize: "small"
-                    width: parent.width
-                    wrapMode: Text.WordWrap
-                }
-                Slider {
-                    width: parent.width
-                    minimumValue: 1.0
-                    maximumValue: 12.0
-                    value: root.dockBgHeight
-                    live: true
-                    function formatValue(v) { return Number(v).toFixed(1) + " gu"; }
-                    onValueChanged: {
-                        if (Math.abs(value - root.dockBgHeight) > 0.01) {
-                            root.dockBgHeightAdjusted(value);
                         }
                     }
                 }

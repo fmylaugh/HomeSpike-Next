@@ -144,7 +144,9 @@ Item {
         snapMode: ListView.SnapOneItem
         boundsBehavior: Flickable.StopAtBounds
         highlightFollowsCurrentItem: true
-        highlightMoveDuration: 250
+        highlightMoveDuration: 150
+        // Snappier settle when flicking between pages.
+        flickDeceleration: units.gu(800)
         interactive: !dragController.dragging
         clip: true
         model: persist.pageCount
@@ -156,9 +158,16 @@ Item {
         // by DragController to translate a drop point into (col,row).
         readonly property real gridLeftMargin: units.gu(1)
         readonly property real gridRightMargin: units.gu(1)
-        readonly property real cellH: units.gu(11)
+        // Row pitch is derived from the live viewport height: fit as many
+        // ~11gu rows as possible, then stretch so they divide the height
+        // EXACTLY. This guarantees the bottom row is never sliced off and
+        // (since rows tile the height evenly) snap neighbours never overlap —
+        // no y-clamping needed. Falls back to 11gu before height is known.
+        readonly property int  gridRows: Math.max(1, Math.floor(height / units.gu(11)))
+        readonly property real cellH: height > 0 ? height / gridRows : units.gu(11)
         readonly property real tileW: units.gu(9)
-        readonly property real tileH: units.gu(11)
+        // Tile box fills its row band so the centred icon+label sits mid-band.
+        readonly property real tileH: cellH
 
         delegate: Item {
             id: pageDelegate
@@ -199,6 +208,10 @@ Item {
                         return f * pageDelegate.width - width / 2;
                     }
                     y: {
+                        // Grid modes (autoFill/snap) sit on fixed cellH rows —
+                        // return the row position verbatim. Do NOT clamp them:
+                        // clamping collapses any overflow row onto the bottom
+                        // edge, making vertical neighbours overlap.
                         if (mode === "autoFill") {
                             return Math.floor(index / pages.cols) * pagesView.cellH;
                         }
@@ -206,9 +219,12 @@ Item {
                             var r = model.row >= 0 ? model.row : 0;
                             return r * pagesView.cellH;
                         }
-                        // free — see x binding for the > 0.001 reasoning.
+                        // free — continuous fractional placement. Clamp so a
+                        // tile dropped near the bottom isn't sliced in half by
+                        // pagesView's clip (free mode permits overlap anyway).
                         var f = (model.yFrac > 0.001) ? model.yFrac : 0.5;
-                        return f * pageDelegate.height - height / 2;
+                        var raw = f * pageDelegate.height - height / 2;
+                        return Math.max(0, Math.min(raw, pageDelegate.height - height));
                     }
                     // Smooth re-flow when models reorder or modes change.
                     // Disabled while THIS tile is being dragged so it
@@ -262,7 +278,7 @@ Item {
             // the reserved left margin.
             horizontalCenterOffset: root.leftReserve / 2
             bottom: persist.dockEnabled ? dockBar.top : parent.bottom
-            bottomMargin: units.gu(1.5)
+            bottomMargin: units.gu(2)
         }
         spacing: units.gu(1)
         visible: root.uiEnabled && persist.pageCount > 1
@@ -289,8 +305,21 @@ Item {
         }
         height: root.dockHeight
 
-        // Visible background plate — resizable via Settings → "Dock background height".
-        // Vertically centered in the zone; icons can extend above/below if it's thin.
+        // ----- Adaptive dock item sizing -----
+        // The dock's usable width (parent.width here) shrinks when Lomiri's
+        // side panel pushes us right via leftReserve. Cap each tile at the
+        // normal 9gu, but shrink it to share whatever width is available so
+        // all dockApps stay visible — never clipped or pushed off the edge.
+        readonly property real dockGap: units.gu(1)
+        readonly property int  dockCount: pages.dockApps.count
+        readonly property real dockItemW: dockCount > 0
+            ? Math.min(units.gu(9), (width - (dockCount - 1) * dockGap) / dockCount)
+            : units.gu(9)
+
+        // Drop-target plate: transparent normally, shows a white outline
+        // while a tile is being dragged onto the dock. Sized to dockBgHeight
+        // (a fixed default — no longer user-adjustable) so the outline frames
+        // the icon row.
         Rectangle {
             id: dockBg
             anchors.horizontalCenter: parent.horizontalCenter
@@ -298,7 +327,7 @@ Item {
             width: parent.width
             height: units.gu(persist.dockBgHeight)
             radius: Math.min(units.gu(2.5), height / 2)
-            color: dragController.targetingDock ? "#55ffffff" : "#33ffffff"
+            color: "transparent"
             border.color: dragController.targetingDock ? "white" : "transparent"
             border.width: 1
             Behavior on color  { ColorAnimation  { duration: 120 } }
@@ -307,11 +336,11 @@ Item {
 
         Row {
             anchors.centerIn: parent
-            spacing: units.gu(1)
+            spacing: dockBar.dockGap
             Repeater {
                 model: pages.dockApps
                 delegate: Item {
-                    width: units.gu(9)
+                    width: dockBar.dockItemW
                     height: root.dockHeight - units.gu(2)
                     opacity: (dragController.dragging
                               && dragController.sourceContainer === "dock"
@@ -319,10 +348,14 @@ Item {
 
                     TileBody {
                         anchors.fill: parent
+                        // Keep the icon within the (possibly shrunk) tile so a
+                        // full dock fits when the side panel narrows us.
+                        iconSize: Math.min(units.gu(6), parent.width)
                         appId: model.appId
                         appName: model.name
                         iconSrc: model.icon
                         container: "dock"
+                        showLabel: false
                         indexInModel: index
                         editMode: root.editMode
                         controller: dragController
@@ -377,12 +410,10 @@ Item {
         pageCount: persist.pageCount
         maxPages: pages.maxPages
         dockEnabled: persist.dockEnabled
-        dockBgHeight: persist.dockBgHeight
         placementMode: persist.placementMode
         leftReserve: root.leftReserve
         onPageCountAdjusted: (n) => pages.setPageCount(n)
         onDockToggled: (on) => pages.toggleDock(on)
-        onDockBgHeightAdjusted: (gu) => persist.dockBgHeight = gu
         // PageModelRegistry's Connections watcher catches the persist
         // change and re-renders from the new mode's saved slot.
         onPlacementModeAdjusted: (mode) => persist.placementMode = mode

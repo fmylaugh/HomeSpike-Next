@@ -27,6 +27,14 @@ Item {
     property string appName: ""
     property string iconSrc: ""
 
+    /** Whether to draw the app-name label under the icon. Dock tiles set
+     *  this false — the dock shows icons only. */
+    property bool showLabel: true
+
+    /** Icon edge size. Dock tiles shrink this so a full row of items fits
+     *  when Lomiri's side panel narrows the available width. */
+    property real iconSize: units.gu(6)
+
     // ---- Source-of-truth hints for the drag controller ----
     /** Either "grid" or "dock". */
     property string container: "grid"
@@ -123,7 +131,7 @@ Item {
 
         Item {
             id: iconHolder
-            width: units.gu(6)
+            width: body.iconSize
             height: 7.5 / 8 * width
             anchors.horizontalCenter: parent.horizontalCenter
 
@@ -138,15 +146,21 @@ Item {
                     sourceSize.width: shape.width
                     source: body.iconSrc
                 }
-                // Wiggle in edit mode (paused while a drag is in flight
-                // so the dragged tile doesn't visibly jitter)
-                SequentialAnimation on rotation {
+                // Edit-mode jiggle: a clear side-to-side rock so the user can
+                // see tiles are now draggable. Paused while a drag is in flight
+                // so the lifted tile doesn't jitter. A one-shot random head
+                // start desyncs neighbouring tiles for a more organic feel, and
+                // onStopped snaps the icon back upright when edit mode ends.
+                SequentialAnimation {
                     running: body.editMode && (!controller || !controller.dragging)
-                    loops: Animation.Infinite
-                    NumberAnimation { from: -1.5; to: 1.5; duration: 120 }
-                    NumberAnimation { from: 1.5; to: -1.5; duration: 120 }
+                    PauseAnimation { duration: Math.round(Math.random() * 140) }
+                    SequentialAnimation {
+                        loops: Animation.Infinite
+                        NumberAnimation { target: shape; property: "rotation"; from: -3; to: 3; duration: 140; easing.type: Easing.InOutSine }
+                        NumberAnimation { target: shape; property: "rotation"; from: 3; to: -3; duration: 140; easing.type: Easing.InOutSine }
+                    }
+                    onStopped: shape.rotation = 0
                 }
-                Behavior on rotation { NumberAnimation { duration: 80 } }
             }
 
             // Remove badge ("×") — top-left corner, edit mode only
@@ -183,6 +197,7 @@ Item {
         }
 
         Label {
+            visible: body.showLabel
             text: body.appName
             width: units.gu(9)
             horizontalAlignment: Text.AlignHCenter
