@@ -9,6 +9,7 @@
  * @todo None
  */
 import QtQuick 2.15
+import Lomiri.Components 1.3
 
 Rectangle {
     id: root
@@ -26,43 +27,11 @@ Rectangle {
     radius: width / 2
     color: "#e94560"
 
-    // Simple drawn trash can (no emoji glyph dependency).
-    Item {
+    Icon {
         anchors.centerIn: parent
-        width: units.gu(2.2)
-        height: units.gu(2.6)
-
-        // Handle
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: 0
-            width: parent.width * 0.4
-            height: units.gu(0.35)
-            radius: height / 2
-            color: "white"
-        }
-        // Lid
-        Rectangle {
-            id: lid
-            anchors.horizontalCenter: parent.horizontalCenter
-            y: units.gu(0.45)
-            width: parent.width
-            height: units.gu(0.45)
-            radius: height / 2
-            color: "white"
-        }
-        // Body (outline)
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.top: lid.bottom
-            anchors.topMargin: units.gu(0.25)
-            width: parent.width * 0.82
-            height: parent.height - units.gu(1.1)
-            radius: units.gu(0.4)
-            color: "transparent"
-            border.color: "white"
-            border.width: units.gu(0.28)
-        }
+        width: parent.width * 0.5
+        height: width
+        source: "../icons/trash.svg"
     }
 
     MouseArea {

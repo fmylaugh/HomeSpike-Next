@@ -9,6 +9,7 @@
  * @todo None
  */
 import QtQuick 2.15
+import Lomiri.Components 1.3
 
 Rectangle {
     id: root
@@ -29,11 +30,11 @@ Rectangle {
     radius: width / 2
     color: "#3d5af1"
 
-    Text {
+    Icon {
         anchors.centerIn: parent
-        text: "+"
-        color: "white"
-        font.pixelSize: parent.height * 0.6
+        width: parent.width * 0.5
+        height: width
+        source: "../icons/ui-add.svg"
     }
 
     MouseArea {

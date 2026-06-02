@@ -344,20 +344,19 @@ Item {
     }
 
     /**
-     * Any harvested app that wasn't placed in the active mode's saved
-     * layout gets auto-added to the last page, unless we're in free mode
-     * (where placement is intentionally manual — user adds via Drawer
+     * Any harvested app that wasn't placed in the active mode's saved layout
+     * gets auto-added to the earliest page with a free slot, unless we're in
+     * free mode (where placement is intentionally manual — user adds via Drawer
      * long-press).
      */
     function _autoAppendNewApps(source, hiddenSet) {
         if (persist.placementMode === "free") return;
-        var last = persist.pageCount - 1;
         var sourceIds = source._order || [];
         for (var m = 0; m < sourceIds.length; ++m) {
             var sid = sourceIds[m];
             if (source[sid]._used) continue;
             if (hiddenSet[sid])    continue;
-            _placeAtFirstFreeCell(last, source[sid]);
+            _placeAtFirstFreeCell(_firstPageWithRoom(), source[sid]);
         }
     }
 
@@ -703,7 +702,6 @@ Item {
         var hiddenSet = _setFromArray(hidden);
 
         var changed = false;
-        var last = persist.pageCount - 1;
         for (var k = 0; k < appIds.length; ++k) {
             var appId = appIds[k];
 
@@ -718,7 +716,9 @@ Item {
             var src = _findSourceApp(appId);
             if (!src) continue;
 
-            _placeAtFirstFreeCell(last, src);
+            // Land on the earliest page with a free slot (recomputed per app so
+            // it spills to the next page only once the current one is full).
+            _placeAtFirstFreeCell(_firstPageWithRoom(), src);
             placed[appId] = true;
             changed = true;
         }
@@ -727,6 +727,19 @@ Item {
             persist.hiddenAppIds = persist.writeJson(hidden);
             persistOrder();
         }
+    }
+
+    /**
+     * First page (from 0) that still has a free grid cell; falls back to the
+     * last page if every page is full. Keeps "Add to HomeSpike" on the earliest
+     * available slot instead of always dumping onto the last page.
+     */
+    function _firstPageWithRoom() {
+        var cap = cols * 8;  // matches firstFreeCell's soft row cap
+        for (var p = 0; p < persist.pageCount; ++p) {
+            if (pageModels[p].count < cap) return p;
+        }
+        return persist.pageCount - 1;
     }
 
     function _indexPlacedApps() {
