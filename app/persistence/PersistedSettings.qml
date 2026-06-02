@@ -51,6 +51,9 @@ Item {
         // "snap" = icons sit on a grid but can leave gaps; "free" = icons
         // are positioned anywhere (fractional coords) and may overlap.
         property string placementMode: "autoFill"
+        // Show app-name labels under icons on the home grid / in the dock.
+        property bool   gridLabels:   true
+        property bool   dockLabels:   false
     }
 
     // ---- Read/write aliases so callers can bind to and mutate values
@@ -62,6 +65,8 @@ Item {
     property alias dockEnabled:   store.dockEnabled
     property alias dockBgHeight:  store.dockBgHeight
     property alias placementMode: store.placementMode
+    property alias gridLabels:    store.gridLabels
+    property alias dockLabels:    store.dockLabels
 
     /**
      * Parse a JSON string with a fallback. Used to read array values

@@ -212,7 +212,9 @@ Item {
                 anchors.fill: parent
                 enabled: root.uiEnabled
                 pressAndHoldInterval: 500
+                // Long-press toggles edit mode; a tap on empty space leaves it.
                 onPressAndHold: root.editMode = !root.editMode
+                onClicked: if (root.editMode) root.editMode = false
             }
 
             // One Repeater drives all three placement modes — only the
@@ -305,6 +307,7 @@ Item {
                         appName: model.name
                         iconSrc: model.icon
                         container: "grid"
+                        showLabel: persist.gridLabels
                         sourcePage: pageDelegate.pageIndex
                         indexInModel: index
                         editMode: root.editMode
@@ -422,7 +425,7 @@ Item {
                         appName: model.name
                         iconSrc: model.icon
                         container: "dock"
-                        showLabel: false
+                        showLabel: persist.dockLabels
                         indexInModel: index
                         editMode: root.editMode
                         controller: dragController
@@ -438,14 +441,7 @@ Item {
     // ============================================================
     // Edit-mode chrome
     // ============================================================
-    EditModeDonePill {
-        active: root.uiEnabled && root.editMode
-        anchors {
-            top: parent.top; right: parent.right
-            topMargin: units.gu(4); rightMargin: units.gu(2)
-        }
-        onDismissed: root.editMode = false
-    }
+    // (No "Done" pill — tap empty space to leave edit mode.)
 
     // Bottom-right edit-mode button stack (top → bottom: trash, +, gear).
     // A Column so hidden buttons collapse cleanly (no gaps) — the trash hides
@@ -504,11 +500,15 @@ Item {
         id: settingsOverlay
         dockEnabled: persist.dockEnabled
         placementMode: persist.placementMode
+        gridLabels: persist.gridLabels
+        dockLabels: persist.dockLabels
         leftReserve: root.leftReserve
         onDockToggled: (on) => pages.toggleDock(on)
         // PageModelRegistry's Connections watcher catches the persist
         // change and re-renders from the new mode's saved slot.
         onPlacementModeAdjusted: (mode) => persist.placementMode = mode
+        onGridLabelsToggled: (show) => persist.gridLabels = show
+        onDockLabelsToggled: (show) => persist.dockLabels = show
     }
 
     ConfirmRemoveOverlay {

@@ -21,11 +21,19 @@ Rectangle {
     /** Current tile placement mode (bound to persist.placementMode). */
     property string placementMode: "autoFill"
 
+    /** Whether app-name labels show on the home grid / in the dock. */
+    property bool gridLabels: true
+    property bool dockLabels: false
+
     /** Emitted when the user flips the dock switch. */
     signal dockToggled(bool enabled)
 
     /** Emitted when the user picks a different layout mode. */
     signal placementModeAdjusted(string newMode)
+
+    /** Emitted when the user toggles the label switches. */
+    signal gridLabelsToggled(bool show)
+    signal dockLabelsToggled(bool show)
 
     /** Px width of the Lomiri launcher panel currently overlapping us.
      *  We shift the dialog box right by half this so it stays centered in
@@ -89,6 +97,57 @@ Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     onCheckedChanged: {
                         if (checked !== root.dockEnabled) root.dockToggled(checked);
+                    }
+                }
+            }
+
+            // ---- Home-grid labels toggle ----
+            Row {
+                width: parent.width
+                spacing: units.gu(2)
+                Column {
+                    width: parent.width - gridLabelSwitch.width - units.gu(2)
+                    Label { text: "Home screen labels"; color: "white" }
+                    Label {
+                        text: "Show the app name under each icon on the home grid."
+                        color: "#9fa9c0"
+                        fontSize: "small"
+                        wrapMode: Text.WordWrap
+                        width: parent.width
+                    }
+                }
+                Switch {
+                    id: gridLabelSwitch
+                    checked: root.gridLabels
+                    anchors.verticalCenter: parent.verticalCenter
+                    onCheckedChanged: {
+                        if (checked !== root.gridLabels) root.gridLabelsToggled(checked);
+                    }
+                }
+            }
+
+            // ---- Dock labels toggle ----
+            Row {
+                width: parent.width
+                spacing: units.gu(2)
+                visible: root.dockEnabled
+                Column {
+                    width: parent.width - dockLabelSwitch.width - units.gu(2)
+                    Label { text: "Dock labels"; color: "white" }
+                    Label {
+                        text: "Show the app name under each icon in the dock."
+                        color: "#9fa9c0"
+                        fontSize: "small"
+                        wrapMode: Text.WordWrap
+                        width: parent.width
+                    }
+                }
+                Switch {
+                    id: dockLabelSwitch
+                    checked: root.dockLabels
+                    anchors.verticalCenter: parent.verticalCenter
+                    onCheckedChanged: {
+                        if (checked !== root.dockLabels) root.dockLabelsToggled(checked);
                     }
                 }
             }
