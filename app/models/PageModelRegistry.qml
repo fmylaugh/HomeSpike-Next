@@ -40,8 +40,17 @@ Item {
     /** Hard cap on dock entries. */
     readonly property int dockMax: 5
 
-    /** Number of columns in the snap/autoFill grid. */
-    readonly property int cols: 4
+    /** Number of columns in the snap/autoFill grid. Bound by the parent to the
+     *  live viewport width (≥4) so landscape uses the extra width instead of
+     *  clipping rows. autoFill reflows cleanly when this changes. */
+    property int cols: 4
+
+    /** True in landscape (bound by the parent). snap/free keep SEPARATE saved
+     *  positions per orientation: the live model holds the active orientation's
+     *  position, and the layout reloads when this flips. autoFill is order-only
+     *  and shared across orientations. */
+    property bool landscape: false
+    onLandscapeChanged: rebuildVisible()
 
     /** Per-page models (fixed pool — only the first pageCount are used). */
     ListModel { id: page0 }
@@ -211,59 +220,127 @@ Item {
         for (var p = 0; p < pc; ++p) {
             pageModels[p].clear();
             var entries = (pageData[p] && pageData[p][mode]) || [];
-            var seq = 0;
+
+            // Pass 1: resolve the LIVE entries (visible, installed, not already
+            // placed elsewhere), marking source._used so members of folders and
+            // duplicates don't render twice. Keep the raw entry for positions.
+            var live = [];
             for (var k = 0; k < entries.length; ++k) {
                 var entry = entries[k];
-                var isFolder = entry && typeof entry === "object" && entry.folder === true;
-
-                // Slot position — identical maths for apps and folders.
-                var col = -1, rowI = -1, xFrac = -1, yFrac = -1;
-                if (mode === "autoFill") {
-                    col  = seq % cols;
-                    rowI = Math.floor(seq / cols);
-                } else if (mode === "snap") {
-                    col  = (entry && typeof entry.col === "number") ? entry.col  : -1;
-                    rowI = (entry && typeof entry.row === "number") ? entry.row  : -1;
-                } else if (mode === "free") {
-                    xFrac = (entry && typeof entry.xFrac === "number") ? entry.xFrac : 0.0;
-                    yFrac = (entry && typeof entry.yFrac === "number") ? entry.yFrac : 0.0;
-                }
-
-                if (isFolder) {
-                    // Keep only visible, installed, not-already-placed members.
+                if (entry && typeof entry === "object" && entry.folder === true) {
                     var members = Array.isArray(entry.apps) ? entry.apps : [];
-                    var live = [];
+                    var ids = [];
                     for (var mi = 0; mi < members.length; ++mi) {
                         var aid = members[mi];
-                        if (!aid)              continue;
-                        if (hiddenSet[aid])    continue;
-                        if (dockSet[aid])      continue;
-                        if (!source[aid])      continue;
-                        if (source[aid]._used) continue;
-                        live.push(aid);
+                        if (!aid || hiddenSet[aid] || dockSet[aid]) continue;
+                        if (!source[aid] || source[aid]._used)      continue;
+                        ids.push(aid);
                         source[aid]._used = true;
                     }
-                    if (live.length === 0) continue;  // empty folder → drop it
-                    pageModels[p].append(_makeFolderRow(
-                        entry.id || _newFolderId(), entry.name || "Folder",
-                        live, col, rowI, xFrac, yFrac));
-                    if (mode === "autoFill") seq++;
-                    continue;
+                    if (ids.length === 0) continue;  // empty folder → drop it
+                    live.push({ folder: true, entry: entry,
+                                id: entry.id || _newFolderId(),
+                                name: entry.name || "Folder", members: ids });
+                } else {
+                    var appId = (typeof entry === "string") ? entry : (entry ? entry.appId : null);
+                    if (!appId || hiddenSet[appId] || dockSet[appId]) continue;
+                    if (!source[appId] || source[appId]._used)        continue;
+                    source[appId]._used = true;
+                    live.push({ folder: false, entry: entry, srcApp: source[appId] });
+                }
+            }
+
+            // Landscape snap default packing: tiles with an explicit landscape
+            // cell keep it; the rest pack into the free cells IN PORTRAIT
+            // READING ORDER (row-major by their portrait col/row). This makes
+            // the default landscape layout a reflow of portrait — the same
+            // tiles stay visible, just spread across more columns — instead of
+            // the raw storage order, which clipped different tiles each way.
+            var packCell = {};  // live-index -> {col,row}
+            if (mode === "snap" && landscape) {
+                var occ = {};
+                var unset = [];
+                for (var oi = 0; oi < live.length; ++oi) {
+                    var cl = _entryNum(live[oi].entry, "colL");
+                    var rl = _entryNum(live[oi].entry, "rowL");
+                    if (cl !== null && rl !== null) occ[cl + "," + rl] = true;
+                    else unset.push(oi);
+                }
+                unset.sort(function(a, b) {
+                    return _portraitRank(live[a].entry) - _portraitRank(live[b].entry);
+                });
+                var cur = 0;
+                for (var ui = 0; ui < unset.length; ++ui) {
+                    var fc = _nextFreeCell(occ, cur);
+                    cur = fc.next; occ[fc.col + "," + fc.row] = true;
+                    packCell[unset[ui]] = fc;
+                }
+            }
+
+            // Pass 2: assign the ACTIVE orientation's position and append.
+            for (var li = 0; li < live.length; ++li) {
+                var e = live[li];
+                var col = -1, rowI = -1, xFrac = -1, yFrac = -1;
+
+                if (mode === "autoFill") {
+                    col = li % cols; rowI = Math.floor(li / cols);
+                } else if (mode === "snap") {
+                    if (landscape) {
+                        var clx = _entryNum(e.entry, "colL");
+                        var rlx = _entryNum(e.entry, "rowL");
+                        if (clx !== null && rlx !== null) { col = clx; rowI = rlx; }
+                        else { var pcc = packCell[li]; col = pcc.col; rowI = pcc.row; }
+                    } else {
+                        col  = _entryNum(e.entry, "col");  if (col  === null) col  = -1;
+                        rowI = _entryNum(e.entry, "row");  if (rowI === null) rowI = -1;
+                    }
+                } else if (mode === "free") {
+                    if (landscape) {
+                        // Default landscape free to the portrait fraction until
+                        // the user drags it (then xFracL/yFracL take over).
+                        xFrac = _numOr(_entryNum(e.entry, "xFracL"), _numOr(_entryNum(e.entry, "xFrac"), 0.0));
+                        yFrac = _numOr(_entryNum(e.entry, "yFracL"), _numOr(_entryNum(e.entry, "yFrac"), 0.0));
+                    } else {
+                        xFrac = _numOr(_entryNum(e.entry, "xFrac"), 0.0);
+                        yFrac = _numOr(_entryNum(e.entry, "yFrac"), 0.0);
+                    }
                 }
 
-                // App entry.
-                var appId = (typeof entry === "string") ? entry : (entry ? entry.appId : null);
-                if (!appId)              continue;
-                if (hiddenSet[appId])    continue;
-                if (dockSet[appId])      continue;
-                if (!source[appId])      continue;
-                if (source[appId]._used) continue;
-
-                pageModels[p].append(_makeRow(source[appId], col, rowI, xFrac, yFrac));
-                source[appId]._used = true;
-                if (mode === "autoFill") seq++;
+                if (e.folder) {
+                    pageModels[p].append(_makeFolderRow(e.id, e.name, e.members, col, rowI, xFrac, yFrac));
+                } else {
+                    pageModels[p].append(_makeRow(e.srcApp, col, rowI, xFrac, yFrac));
+                }
             }
         }
+    }
+
+    /** Numeric field of a saved entry, or null if absent/not a number. */
+    function _entryNum(entry, field) {
+        return (entry && typeof entry[field] === "number") ? entry[field] : null;
+    }
+
+    /** Row-major rank of a saved entry's PORTRAIT cell (unplaced sorts last).
+     *  Used to pack the landscape default in portrait reading order. */
+    function _portraitRank(entry) {
+        var c = _entryNum(entry, "col");
+        var r = _entryNum(entry, "row");
+        if (c === null || r === null) return 1e9;
+        return r * 1000 + c;
+    }
+
+    function _numOr(v, fallback) { return (v === null || v === undefined) ? fallback : v; }
+
+    /** Next row-major free cell from `cursor`, skipping `occupied` ("c,r" set). */
+    function _nextFreeCell(occupied, cursor) {
+        var idx = cursor;
+        var max = cols * 64;
+        while (idx < max) {
+            var c = idx % cols, r = Math.floor(idx / cols);
+            if (!occupied[c + "," + r]) return { col: c, row: r, next: idx + 1 };
+            idx++;
+        }
+        return { col: 0, row: 0, next: cursor + 1 };
     }
 
     /**
@@ -435,9 +512,12 @@ Item {
     // --------------------------------------------------------------
 
     /**
-     * Serialize the current pageModels + dockApps back to persist. Writes
-     * ONLY the active mode's per-page slot; the other modes' layouts are
-     * preserved untouched so switching back restores them.
+     * Serialize the current pageModels + dockApps back to persist. Writes ONLY
+     * the active mode's per-page slot; other modes are preserved. For snap/free,
+     * the live model holds the ACTIVE orientation's position — we write that to
+     * the active orientation's fields and carry the OTHER orientation's fields
+     * over unchanged from the previously-saved entry, so portrait and landscape
+     * arrangements are remembered independently. Membership/order are shared.
      */
     function persistOrder() {
         var existing = persist.readPageData();
@@ -447,22 +527,25 @@ Item {
         }
         for (var p = 0; p < persist.pageCount; ++p) {
             var bag = existing[p];
+            var oldMap = _existingByKey(bag[mode]);  // before we overwrite it
             var list = [];
             for (var i = 0; i < pageModels[p].count; ++i) {
                 var r = pageModels[p].get(i);
                 if (r.kind === "folder") {
-                    // Folder entry: same shape in every mode, plus position.
                     var fobj = { folder: true, id: r.folderId, name: r.folderName,
                                  apps: _parseApps(r.appsJson) };
-                    if (mode === "snap")      { fobj.col = r.col; fobj.row = r.row; }
-                    else if (mode === "free") { fobj.xFrac = r.xFrac; fobj.yFrac = r.yFrac; }
+                    var fOld = oldMap["f:" + r.folderId];
+                    if (mode === "snap")      _assign(fobj, _snapPos(r, fOld));
+                    else if (mode === "free") _assign(fobj, _freePos(r, fOld));
                     list.push(fobj);
                 } else if (mode === "autoFill") {
                     list.push(r.appId);
                 } else if (mode === "snap") {
-                    list.push({ appId: r.appId, col: r.col, row: r.row });
+                    var so = _snapPos(r, oldMap["a:" + r.appId]); so.appId = r.appId;
+                    list.push(so);
                 } else if (mode === "free") {
-                    list.push({ appId: r.appId, xFrac: r.xFrac, yFrac: r.yFrac });
+                    var fo = _freePos(r, oldMap["a:" + r.appId]); fo.appId = r.appId;
+                    list.push(fo);
                 }
             }
             bag[mode] = list;
@@ -473,6 +556,55 @@ Item {
         var dockIds = [];
         for (var j = 0; j < _dock.count; ++j) dockIds.push(_dock.get(j).appId);
         persist.dockOrder = persist.writeJson(dockIds);
+    }
+
+    // ----- per-orientation persistence helpers -----
+
+    function _assign(dst, src) { for (var k in src) dst[k] = src[k]; return dst; }
+
+    /** Index a saved per-mode list by key: "a:"+appId / "f:"+folderId. */
+    function _existingByKey(listArr) {
+        var map = {};
+        if (!Array.isArray(listArr)) return map;
+        for (var i = 0; i < listArr.length; ++i) {
+            var e = listArr[i];
+            if (e && typeof e === "object") {
+                if (e.folder === true && e.id) map["f:" + e.id] = e;
+                else if (e.appId)              map["a:" + e.appId] = e;
+            }
+        }
+        return map;
+    }
+
+    /** Snap position object: active orientation from the row, other orientation
+     *  carried over from the previously-saved entry. */
+    function _snapPos(r, old) {
+        var o = {};
+        if (landscape) {
+            o.colL = r.col; o.rowL = r.row;
+            if (_entryNum(old, "col") !== null) o.col = old.col;
+            if (_entryNum(old, "row") !== null) o.row = old.row;
+        } else {
+            o.col = r.col; o.row = r.row;
+            if (_entryNum(old, "colL") !== null) o.colL = old.colL;
+            if (_entryNum(old, "rowL") !== null) o.rowL = old.rowL;
+        }
+        return o;
+    }
+
+    /** Free position object: active orientation from the row, other carried over. */
+    function _freePos(r, old) {
+        var o = {};
+        if (landscape) {
+            o.xFracL = r.xFrac; o.yFracL = r.yFrac;
+            if (_entryNum(old, "xFrac") !== null) o.xFrac = old.xFrac;
+            if (_entryNum(old, "yFrac") !== null) o.yFrac = old.yFrac;
+        } else {
+            o.xFrac = r.xFrac; o.yFrac = r.yFrac;
+            if (_entryNum(old, "xFracL") !== null) o.xFracL = old.xFracL;
+            if (_entryNum(old, "yFracL") !== null) o.yFracL = old.yFracL;
+        }
+        return o;
     }
 
     /**

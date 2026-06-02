@@ -83,6 +83,15 @@ Item {
         id: pages
         persist: persist
         appHarvest: appHarvest
+        // Column count tracks the live grid width: ~4 in portrait, more in
+        // landscape so the wider screen holds more icons per row instead of
+        // overflowing the (shorter) height. Never below 4. autoFill reflows
+        // automatically; snap keeps each tile's saved column.
+        cols: pagesView.width > 0
+              ? Math.max(4, Math.floor((pagesView.width - units.gu(2)) / units.gu(11)))
+              : 4
+        // Drives separate per-orientation snap/free layouts; reloads on flip.
+        landscape: pagesView.landscape
     }
 
     Component.onCompleted: {
@@ -143,6 +152,14 @@ Item {
         orientation: ListView.Horizontal
         snapMode: ListView.SnapOneItem
         boundsBehavior: Flickable.StopAtBounds
+        // SwipeView-style strict paging: pins the current page to the viewport
+        // and, crucially, RE-ALIGNS to that same page when the viewport resizes
+        // (e.g. rotating to landscape). Without this the view stays at a stale
+        // contentX after a rotation — pages end up half-scrolled, icons get
+        // clipped at the fold, and the page dots desync from what's shown.
+        highlightRangeMode: ListView.StrictlyEnforceRange
+        preferredHighlightBegin: 0
+        preferredHighlightEnd: 0
         highlightFollowsCurrentItem: true
         highlightMoveDuration: 150
         // Snappier settle when flicking between pages.
@@ -155,8 +172,15 @@ Item {
         // the touch grab and strand the drag. Cheap for a handful of pages.
         cacheBuffer: width * Math.max(1, persist.pageCount)
 
-        // Index of currently centered page (for indicators + drag drop target)
-        property int currentPage: Math.round(contentX / Math.max(1, width))
+        // The page filling the viewport (indicators + drag drop target).
+        // currentIndex stays correct across resize/rotation; deriving from
+        // contentX/width did not.
+        readonly property int currentPage: currentIndex
+
+        // Landscape (wider than tall): pack every tile into the wider grid so
+        // nothing is clipped by the reduced height. Portrait keeps the saved
+        // per-mode layout — rotating never rewrites it.
+        readonly property bool landscape: width > height
 
         // Shared grid geometry — used for autoFill + snap rendering AND
         // by DragController to translate a drop point into (col,row).
@@ -213,13 +237,20 @@ Item {
                     // switch source field when placementMode changes.
                     readonly property string mode: persist.placementMode
                     x: {
+                        // autoFill packs by index (reflows with the column count,
+                        // so it uses the wider landscape grid). snap/free use the
+                        // model's ACTIVE position, which the model already loaded
+                        // for the current orientation — landscape and portrait
+                        // each keep their own saved snap/free layout.
                         if (mode === "autoFill") {
                             return pagesView.gridLeftMargin
                                  + (index % pages.cols) * pageDelegate.cellW
                                  + (pageDelegate.cellW - width) / 2;
                         }
                         if (mode === "snap") {
-                            var c = model.col >= 0 ? model.col : 0;
+                            // Clamp to the current column count so a tile saved
+                            // at a high column stays on-screen in a narrower grid.
+                            var c = model.col >= 0 ? Math.min(model.col, pages.cols - 1) : 0;
                             return pagesView.gridLeftMargin
                                  + c * pageDelegate.cellW
                                  + (pageDelegate.cellW - width) / 2;
@@ -231,10 +262,6 @@ Item {
                         return f * pageDelegate.width - width / 2;
                     }
                     y: {
-                        // Grid modes (autoFill/snap) sit on fixed cellH rows —
-                        // return the row position verbatim. Do NOT clamp them:
-                        // clamping collapses any overflow row onto the bottom
-                        // edge, making vertical neighbours overlap.
                         if (mode === "autoFill") {
                             return Math.floor(index / pages.cols) * pagesView.cellH;
                         }
@@ -445,7 +472,7 @@ Item {
                 // Focus the freshly added (now last) page — deferred a tick so
                 // the ListView has taken in the new page count first.
                 Qt.callLater(function() {
-                    pagesView.positionViewAtIndex(persist.pageCount - 1, ListView.Beginning);
+                    pagesView.currentIndex = persist.pageCount - 1;
                 });
             }
         }
@@ -498,8 +525,7 @@ Item {
             // Land on a valid page (the shifted-in one, or the new last) once
             // the ListView has taken in the reduced page count.
             Qt.callLater(function() {
-                pagesView.positionViewAtIndex(
-                    Math.min(pageIndex, persist.pageCount - 1), ListView.Beginning);
+                pagesView.currentIndex = Math.min(pageIndex, persist.pageCount - 1);
             });
         }
     }

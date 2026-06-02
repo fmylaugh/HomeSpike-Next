@@ -108,7 +108,7 @@ Item {
             var n = persist.pageCount;
             if (n <= 1) { stop(); return; }
             var target = (pagesView.currentPage + direction + n) % n;  // wrap
-            pagesView.positionViewAtIndex(target, ListView.Beginning);
+            pagesView.currentIndex = target;  // strict-range view animates to it
         }
     }
 
@@ -386,6 +386,8 @@ Item {
                     _snapResolveCollision();
                 } else if (persist.placementMode === "autoFill") {
                     // autoFill reorder is deferred to here (see _handleOverGrid).
+                    // Landscape also runs this path (packed reorder), which only
+                    // changes list order — saved snap col/row are left intact.
                     _autoFillReorder(lastDragX, lastDragY);
                 }
             }
