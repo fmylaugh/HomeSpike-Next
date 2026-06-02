@@ -5,16 +5,39 @@ All notable changes to HomeSpike are documented here.
 ## [Unreleased]
 
 ### Added
+- **App folders.** Drop one app onto another to create a folder; a popup names it (or cancel). Open a folder to launch its apps; tap the name above the card to rename; long-press a member to rearrange it inside, or drag it past the card edge to pull it back onto the home grid; drop another app onto a folder to add it. A folder auto-dissolves to a normal icon when one member is left; the edit-mode "×" deletes the folder and removes its apps from HomeSpike (they stay installed). Folders are grid-only and carry across pages intact.
+- **Add / remove pages from edit mode.** A "+" button above the settings gear adds a page (cap 5) and jumps to it; a trash button removes the current page after a confirmation, removing the apps that were on it.
+- **Long-press empty space to toggle edit mode** (in addition to long-pressing a tile).
+- **Edit-mode jiggle.** Every icon rocks side-to-side in edit mode as a "you can rearrange now" cue, and snaps upright when you leave edit mode.
+- **Separate portrait / landscape layouts for Snap to grid and Place anywhere.** Each orientation remembers its own icon positions; membership and removals are shared. Rotating reflows the other orientation's default into the available space (in portrait reading order) so nothing is hidden.
+- **Adaptive column count.** The grid uses more columns when there's width to spare (landscape) so the wider screen holds more icons per row instead of clipping rows.
 - **System Settings integration.** New entry at *Settings → Personal → HomeSpike* with a master on/off toggle. Flipping it takes effect live — no restart, no logout. When off, the phone reverts to stock Lomiri behavior (BFB opens the drawer, spread home button hides, "Add to HomeSpike" drawer menu hides, launcher panel stops auto-collapsing, HomeSpike's UI is invisible while the wallpaper stays).
 - **gsettings schema** `com.lomiri.HomeSpike` (single `enabled` boolean key, default `true`). Single source of truth for the toggle. Survives HomeSpike crashes since the override files read it directly.
 - **[`docs/ClickInstaller.md`](docs/ClickInstaller.md)** — scoping doc for a future Click package that would ship HomeSpike through OpenStore (one-tap install, no `PIN=… ./install.sh` dance).
 - **Drawer view modes — Standard / A-Z / Categories.** New pill button under the drawer's search field cycles through three layouts: *Standard* (stock Lomiri flat alphabetical grid, default), *A-Z* (same icons sectioned by single-letter sticky headers), *Categories* (XDG-bucket sections — Internet, Office, Multimedia, Games, Utilities, Development, Settings, Other; empty buckets hidden). Built initially as a POC for UBports bounty issue #127 (since claimed by another contributor); shipping it as a HomeSpike feature regardless.
 
 ### Changed
+- **Dock restyle.** Transparent background (only a drop-target outline shows while you drag a tile in), icons only (labels removed), and the icons shrink so all of them stay visible when Lomiri's launcher panel slides in.
+- **Folder open view styling.** Translucent blue card with the folder name centred *above* it; tap the name to rename, tap outside to close (no Done button). Tapping a folder while in edit mode opens it ready to rearrange.
+- **Grid row height now derives from the viewport** so a whole number of rows fits exactly — the bottom row is never sliced off, and Snap-to-grid neighbours never overlap.
+- **Page paging reworked to a strict-range pager** (SwipeView-style) so it re-aligns to the current page on resize/rotation and the page dots stay in sync.
+- **Faster page transitions** — shorter snap animation and snappier flick deceleration.
 - **Reworked the "go home" mechanism.** The previous design minimised every running app on `showHome()` and then tried to un-minimise them when the user switched back — that needed a grace timer, a focused-app snapshot, Mir-focus-echo handling, and an unminimise pass on every focus change. It also broke the right-edge spread (cards tapped to resume an app dropped to HomeSpike instead). New design: `showHome()` just promotes the wallpaper Loader to z:9999 so HomeSpike visually covers everything. Apps stay alive at their normal staged positions, hidden behind HomeSpike. When the user focuses any app again, `homeShown` drops, the Loader sinks to z:-2, and the app is already there at full size.
 - `deploy/install.sh`, `deploy/refresh.sh`, `deploy/uninstall.sh` now also install/remove the gsettings schema (with `glib-compile-schemas`) and the system-settings plugin.
+- **Reference / test device is now the Poco X3 NFC (`surya`, aarch64).**
+
+### Removed
+- **"Number of pages" setting** from the HomeSpike Settings menu — pages are now managed with the edit-mode "+" and trash buttons.
+- **"Dock background height" setting** — the dock plate is a fixed default now (it still sizes the drag drop-target outline).
 
 ### Fixed
+- **Drag between the grid and the dock froze and clipped.** Removing the dragged tile from its model mid-drag destroyed the delegate that owned the touch, stranding the gesture until the next tap. Cross-container moves now commit at release, so the grab survives the whole drag.
+- **Drag between pages had the same freeze.** Edge-flip now only scrolls (wrapping from the last page back to the first), the move commits at release, and every page stays instantiated so the dragged tile isn't destroyed when its origin page scrolls off-screen.
+- **Snap-to-grid vertical overlap.** Adjacent rows could overlap near the bottom; the row pitch now divides the available height evenly, with no position clamping for grid modes.
+- **Landscape was broken** — icons vanished, not all pages were reachable, and the page dots pointed at the wrong page. The pager now re-aligns on rotation, icons reflow across the extra columns instead of clipping, and Snap/Place-anywhere keep separate per-orientation layouts.
+- **Moving a folder across pages dropped all but its first app.** The cross-page carry now copies the whole folder row (identity + members) instead of rebuilding it as a single app tile.
+- **Dragging a folder showed its first app's icon.** The floating drag visual now mirrors the folder's 2×2 preview.
+- **`install.sh` failed with `f: unbound variable`.** The `$f` in the override-listing loop was being expanded by the outer shell before the script reached the device; it's escaped now.
 - **Right-edge spread broken after going home.** Tapping any app card in the spread (or the same app the user came from) dropped them back to HomeSpike instead of returning to the app. Root cause was the minimise-then-restore chain in the previous architecture; the rewrite above eliminates it.
 - **Settings switch did nothing.** Lomiri.Components `Switch` fires `onTriggered` (not `onClicked`); the toggle is wired correctly now.
 
