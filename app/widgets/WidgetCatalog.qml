@@ -24,6 +24,7 @@ Item {
     Component { id: clockComponent;    ClockWidget {} }
     Component { id: calendarComponent; CalendarWidget {} }
     Component { id: weatherComponent;  WeatherWidget {} }
+    Component { id: sysInfoComponent;  SysInfoWidget {} }
 
     /** Default plate colour (translucent navy) — the universal "background"
      *  colour slot every widget has. */
@@ -88,6 +89,27 @@ Item {
                              { v: 60, t: "1h" }, { v: 180, t: "3h" } ] }
             ],
             component: weatherComponent
+        },
+        {
+            type: "sysinfo", title: "System Info",
+            // One size — it's an inherently wide, info-dense widget.
+            variants: [ { key: "default", w: 4, h: 3 } ],
+            defaults: { background: true },
+            // Every element is individually recolourable (slots apply to the
+            // single variant, so no `variants` filter needed).
+            colorSlots: [
+                { key: "ascii",   label: "Logo",     def: "#e95420" },
+                { key: "user",    label: "User",     def: "#e06c9a" },
+                { key: "host",    label: "Host",     def: "#e5c07b" },
+                { key: "uptime",  label: "Uptime",   def: "#61afef" },
+                { key: "distro",  label: "Distro",   def: "#98c379" },
+                { key: "kernel",  label: "Kernel",   def: "#c678dd" },
+                { key: "desktop", label: "Desktop",  def: "#56b6c2" },
+                { key: "shell",   label: "Shell",    def: "#c678dd" },
+                { key: "value",   label: "Values",   def: "#ffffff" },
+                { key: "border",  label: "Border",   def: "#3a4262" }
+            ],
+            component: sysInfoComponent
         }
     ]
 

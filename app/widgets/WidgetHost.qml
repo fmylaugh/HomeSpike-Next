@@ -41,6 +41,9 @@ Item {
     /** Shared weather data layer — injected into widgets that expose a
      *  `service` property (the weather widget); ignored by the rest. */
     property var weatherService: null
+    /** Shared system-info source — injected into widgets that expose a
+     *  `sysInfo` property (the system-info widget); ignored by the rest. */
+    property var sysInfoService: null
 
     /** Device orientation angle (deg). The widget's box stays put in the
      *  (portrait) grid; its CONTENT rotates by this so it stays upright as the
@@ -154,8 +157,9 @@ Item {
                     item.background = host._background;
                     item.colors = host._colors;
                     item.settings = host._settings;
-                    // Inject the weather data layer only into widgets that want it.
+                    // Inject shared data layers only into widgets that want them.
                     if (item.hasOwnProperty("service")) item.service = host.weatherService;
+                    if (item.hasOwnProperty("sysInfo")) item.sysInfo = host.sysInfoService;
                 }
             }
 

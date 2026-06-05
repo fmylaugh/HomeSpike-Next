@@ -122,11 +122,14 @@ WidgetBase {
         anchors.fill: parent
         anchors.margins: units.gu(1.2)
 
-        Icon {
+        Image {
             visible: root._haveData
             anchors { top: parent.top; right: parent.right }
             width: units.gu(4.5); height: width
-            name: root.service ? root.service.iconFor(root._code, root._isDay) : "weather-clouds"
+            source: root.service ? root.service.iconFor(root._code, root._isDay) : ""
+            sourceSize.width: width; sourceSize.height: height
+            fillMode: Image.PreserveAspectFit
+            smooth: true
         }
 
         Column {
@@ -209,11 +212,14 @@ WidgetBase {
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
                 width: parent.width * 0.36
                 spacing: units.gu(0.2)
-                Icon {
+                Image {
                     visible: root._haveData
                     anchors.right: parent.right
                     width: units.gu(4.5); height: width
-                    name: root.service ? root.service.iconFor(root._code, root._isDay) : "weather-clouds"
+                    source: root.service ? root.service.iconFor(root._code, root._isDay) : ""
+                    sourceSize.width: width; sourceSize.height: height
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
                 }
                 Label {
                     anchors.right: parent.right
@@ -252,10 +258,13 @@ WidgetBase {
                         fontSizeMode: Text.HorizontalFit
                         minimumPixelSize: units.gu(0.9)
                     }
-                    Icon {
+                    Image {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: units.gu(2.6); height: width
-                        name: root.service ? root.service.iconFor(modelData.code, modelData.isDay) : ""
+                        source: root.service ? root.service.iconFor(modelData.code, modelData.isDay) : ""
+                        sourceSize.width: width; sourceSize.height: height
+                        fillMode: Image.PreserveAspectFit
+                        smooth: true
                     }
                     Label {
                         width: parent.width

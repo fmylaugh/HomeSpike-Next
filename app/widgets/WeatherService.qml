@@ -104,21 +104,30 @@ Item {
         });
     }
 
-    /** WMO weather_code → Suru theme icon name (day/night aware). All names
-     *  verified present in the device's Suru theme. */
+    /**
+     * WMO weather_code → a weather icon file path (day/night aware), relative to
+     * the widget that renders it (app/widgets → ../icons/weather).
+     *
+     * Icons: "SVG weather icons" by amCharts (https://www.amcharts.com/),
+     * licensed under the Creative Commons Attribution 4.0 International License
+     * (https://creativecommons.org/licenses/by/4.0/). Full licence text bundled
+     * at app/icons/weather/LICENSE.
+     */
     function iconFor(code, isDay) {
-        var n = isDay ? "" : "-night";
-        if (code === 0)                    return "weather-clear" + n;
-        if (code === 1 || code === 2)      return "weather-few-clouds" + n;
-        if (code === 3)                    return "weather-overcast";
-        if (code === 45 || code === 48)    return "weather-fog";
-        if (code >= 51 && code <= 57)      return "weather-showers-scattered";
-        if (code >= 61 && code <= 67)      return "weather-showers";
-        if (code >= 71 && code <= 77)      return "weather-snow";
-        if (code >= 80 && code <= 82)      return "weather-showers";
-        if (code === 85 || code === 86)    return "weather-snow";
-        if (code >= 95)                    return "weather-storm";
-        return "weather-clouds" + n;
+        var b = "../icons/weather/";
+        var night = !isDay;
+        if (code === 0)                 return b + (night ? "night.svg" : "day.svg");
+        if (code === 1)                 return b + (night ? "cloudy-night-1.svg" : "cloudy-day-1.svg");
+        if (code === 2)                 return b + (night ? "cloudy-night-2.svg" : "cloudy-day-2.svg");
+        if (code === 3)                 return b + "cloudy.svg";
+        if (code === 45 || code === 48) return b + "cloudy.svg";       // fog → cloudy (no fog icon)
+        if (code >= 51 && code <= 57)   return b + "rainy-1.svg";      // drizzle
+        if (code >= 61 && code <= 67)   return b + "rainy-3.svg";      // rain
+        if (code >= 71 && code <= 77)   return b + "snowy-3.svg";      // snow
+        if (code >= 80 && code <= 82)   return b + "rainy-5.svg";      // rain showers
+        if (code === 85 || code === 86) return b + "snowy-5.svg";      // snow showers
+        if (code >= 95)                 return b + "thunder.svg";      // thunderstorm
+        return b + "cloudy.svg";
     }
 
     /** WMO weather_code → short human label. */

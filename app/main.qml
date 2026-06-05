@@ -119,9 +119,10 @@ Item {
     // weather data layer (network/icon helpers, injected into weather widgets).
     LocaleClock    { id: localeClock }
     WidgetCatalog  { id: widgetCatalog }
-    // id differs from the `weatherService` property it feeds, otherwise the
-    // `weatherService: weatherService` bindings below self-reference (loop).
+    // ids differ from the `weatherService` / `sysInfoService` properties they
+    // feed, otherwise the `xxx: xxx` bindings below self-reference (loop).
     WeatherService { id: weatherSvc }
+    SysInfoService { id: sysInfoSvc }
 
     PageModelRegistry {
         id: pages
@@ -418,6 +419,7 @@ Item {
                                 clock: localeClock
                                 catalog: widgetCatalog
                                 weatherService: weatherSvc
+                                sysInfoService: sysInfoSvc
                                 contentAngle: root.deviceAngle
                                 onRemoveRequested: (id) => pages.removeWidget(id)
                                 onSettingsRequested: (id) => widgetSettingsOverlay.open(id)
