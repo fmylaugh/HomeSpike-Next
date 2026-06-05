@@ -32,6 +32,11 @@ Item {
     /** Injected LocaleClock — time source + locale/12-24h formatting. */
     property var clock: null
 
+    /** Raw per-widget settings object (the parsed widgetSettings JSON). Widgets
+     *  that need non-colour settings — e.g. the weather widget's city/lat/lon/
+     *  unit — read them here. `background` and `colors` remain broken out above. */
+    property var settings: ({})
+
     /** Active size variant key (e.g. "wide" / "small"); concrete widgets read
      *  this to switch their internal layout. */
     property string variant: ""

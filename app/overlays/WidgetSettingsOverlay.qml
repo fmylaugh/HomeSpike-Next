@@ -23,6 +23,8 @@ Rectangle {
     /** Injected: PageModelRegistry (mutators) + WidgetCatalog (slots/variants). */
     property var pages: null
     property var catalog: null
+    /** Injected WeatherService — geocodes the city option. */
+    property var weatherService: null
 
     property real leftReserve: 0
 
@@ -34,6 +36,11 @@ Rectangle {
     // Effective {slot → colour} map (catalog defaults + saved overrides).
     property var colors: ({})
 
+    // Raw settings (for non-colour options: city/unit) + city-lookup feedback.
+    property var rawSettings: ({})
+    property string cityStatus: ""
+    property bool cityError: false
+
     // "" = section list; otherwise the slot key being colour-picked.
     property string editingSlot: ""
     property string editingLabel: ""
@@ -42,6 +49,8 @@ Rectangle {
                                       ? catalog.typeDef(widgetType).variants : []
     readonly property var _slots: (catalog && widgetType)
                                   ? catalog.colorSlotsFor(widgetType, widgetVariant) : []
+    readonly property var _options: (catalog && widgetType)
+                                    ? catalog.optionsFor(widgetType) : []
 
     anchors.fill: parent
     z: 910
@@ -72,8 +81,54 @@ Rectangle {
         for (var s in saved) eff[s] = saved[s];
         colors = eff;
 
+        rawSettings = info.settings;
+        cityStatus = "";
+        cityError = false;
+
         editingSlot = "";
         visible = true;
+    }
+
+    /** Current value of a non-colour option (e.g. "unit"), "" if unset. */
+    function _optValue(key) {
+        return (rawSettings && rawSettings[key] !== undefined && rawSettings[key] !== null)
+               ? rawSettings[key] : "";
+    }
+
+    /** Effective value for highlighting a segmented choice: the saved value, or
+     *  the option's `def` when nothing is saved yet. */
+    function _selValue(opt) {
+        var v = _optValue(opt.key);
+        return (v === "" && opt.def !== undefined) ? opt.def : v;
+    }
+
+    /** Persist one option key + keep the local copy in sync (refreshes UI). */
+    function _setOpt(key, val) {
+        var o = {}; o[key] = val;
+        if (pages) pages.updateWidgetSettings(widgetId, o);
+        var ns = {}; for (var k in rawSettings) ns[k] = rawSettings[k];
+        ns[key] = val; rawSettings = ns;
+    }
+
+    /** Geocode a typed city → persist {city,lat,lon}; report status. */
+    function _setCity(text) {
+        if (!weatherService) { root.cityError = true; root.cityStatus = "Weather service unavailable"; return; }
+        root.cityError = false; root.cityStatus = "Searching…";
+        weatherService.geocode(text, function (res) {
+            if (!res.ok) {
+                root.cityError = true;
+                root.cityStatus = res.error === "notfound" ? "City not found"
+                                : res.error === "empty"    ? "Enter a city name"
+                                                           : "Lookup failed (offline?)";
+                return;
+            }
+            if (root.pages) root.pages.updateWidgetSettings(root.widgetId,
+                                { city: res.label, lat: res.lat, lon: res.lon });
+            var ns = {}; for (var k in root.rawSettings) ns[k] = root.rawSettings[k];
+            ns.city = res.label; ns.lat = res.lat; ns.lon = res.lon;
+            root.rawSettings = ns;
+            root.cityError = false; root.cityStatus = "Set to " + res.label;
+        });
     }
 
     function _openPicker(slot, label) {
@@ -156,6 +211,83 @@ Rectangle {
                                 if (checked === root.background) return;
                                 root.background = checked;
                                 if (root.pages) root.pages.updateWidgetSettings(root.widgetId, { background: checked });
+                            }
+                        }
+                    }
+
+                    // Non-colour options (weather: city + units). Driven by the
+                    // catalog's `options` descriptor; renders per `kind`.
+                    Column {
+                        visible: root._options.length > 0
+                        width: parent.width
+                        spacing: units.gu(1.5)
+
+                        Repeater {
+                            model: root._options
+                            delegate: Column {
+                                id: optEntry
+                                width: parent.width
+                                spacing: units.gu(0.6)
+                                property var opt: modelData
+
+                                Label { text: opt.label ? opt.label : opt.key; color: "white"; font.bold: true }
+
+                                // ----- place (city) -----
+                                Column {
+                                    visible: opt.kind === "place"
+                                    width: parent.width
+                                    spacing: units.gu(0.6)
+                                    Row {
+                                        width: parent.width
+                                        spacing: units.gu(1)
+                                        TextField {
+                                            id: cityField
+                                            width: parent.width - setBtn.width - units.gu(1)
+                                            placeholderText: "City name"
+                                            inputMethodHints: Qt.ImhNoPredictiveText
+                                            onAccepted: root._setCity(cityField.text)
+                                        }
+                                        Button {
+                                            id: setBtn
+                                            text: "Set"
+                                            color: "#3d5af1"
+                                            onClicked: root._setCity(cityField.text)
+                                        }
+                                    }
+                                    Label {
+                                        width: parent.width
+                                        text: root.cityStatus !== "" ? root.cityStatus
+                                              : (root._optValue("city") !== "" ? "Current: " + root._optValue("city") : "")
+                                        visible: text !== ""
+                                        color: root.cityError ? "#e94560" : "#9fa9c0"
+                                        fontSize: "small"
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+
+                                // ----- segmented (e.g. units) -----
+                                Row {
+                                    visible: opt.kind === "segmented"
+                                    spacing: units.gu(1)
+                                    Repeater {
+                                        model: optEntry.opt.choices ? optEntry.opt.choices : []
+                                        delegate: Rectangle {
+                                            height: units.gu(4.5)
+                                            width: segLabel.width + units.gu(3)
+                                            radius: units.gu(1)
+                                            property bool _sel: root._selValue(optEntry.opt) === modelData.v
+                                            color: _sel ? "#3d5af1" : "#1d2540"
+                                            border.color: _sel ? "white" : "#3a456a"
+                                            border.width: 1
+                                            Label {
+                                                id: segLabel
+                                                anchors.centerIn: parent
+                                                text: modelData.t; color: "white"; fontSize: "small"
+                                            }
+                                            MouseArea { anchors.fill: parent; onClicked: root._setOpt(optEntry.opt.key, modelData.v) }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

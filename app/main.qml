@@ -22,7 +22,6 @@ import GSettings 1.0
 import Lomiri.Components 1.3
 import "persistence"
 import "wallpaper"
-import "inbox"
 import "models"
 import "drag"
 import "tiles"
@@ -75,6 +74,28 @@ Item {
     }
     readonly property bool uiEnabled: hsSettings.enabled
 
+    // Reactive "Add to HomeSpike" inbox: the patched Drawer appends an appId to
+    // the `pending-adds` gsettings key; we place it on the grid and clear the
+    // key. We mirror the key into a NORMAL property and watch THAT — an inline
+    // onXChanged handler on the GSettings object itself is a fatal load error,
+    // because its keys are added dynamically (unknown at QML compile time).
+    // Replaces the old polled file inbox (no timer, no file:// XHR spam).
+    property string pendingInbox: hsSettings.pendingAdds
+    onPendingInboxChanged: _drainPendingAdds()
+
+    /** Drain the gsettings inbox: parse appIds, add them, clear the key. */
+    function _drainPendingAdds() {
+        var v = hsSettings.pendingAdds || "";
+        if (v === "") return;
+        var raw = v.split("\n"), ids = [];
+        for (var i = 0; i < raw.length; ++i) {
+            var t = raw[i].replace(/^\s+|\s+$/g, "");
+            if (t.length > 0) ids.push(t);
+        }
+        if (ids.length > 0) pages.addAppsToHome(ids);
+        hsSettings.pendingAdds = "";   // re-entrant change is a no-op (guard above)
+    }
+
     // ---- Device orientation (iOS-style: the home stays portrait — the shell
     // override locks it — and the icons/labels/widget-content re-orient instead
     // of the whole screen). The PHYSICAL device angle comes from the orientation
@@ -94,9 +115,13 @@ Item {
     WallpaperResolver { id: wallpaper }
     AppHarvester      { id: appHarvest }
 
-    // Widget framework: shared clock/locale source + the type registry.
-    LocaleClock   { id: localeClock }
-    WidgetCatalog { id: widgetCatalog }
+    // Widget framework: shared clock/locale source + the type registry + the
+    // weather data layer (network/icon helpers, injected into weather widgets).
+    LocaleClock    { id: localeClock }
+    WidgetCatalog  { id: widgetCatalog }
+    // id differs from the `weatherService` property it feeds, otherwise the
+    // `weatherService: weatherService` bindings below self-reference (loop).
+    WeatherService { id: weatherSvc }
 
     PageModelRegistry {
         id: pages
@@ -114,24 +139,15 @@ Item {
 
     Component.onCompleted: {
         pages.rebuildVisible();
-        pendingAdds.pollNow();
+        _drainPendingAdds();   // pick up anything queued while HomeSpike was down
     }
     Connections {
         target: appHarvest
         function onCountChanged() { pages.rebuildVisible() }
     }
 
-    // ============================================================
-    // Cross-process inbox: the patched Lomiri Drawer.qml appends appIds
-    // to this file on long-press; the inbox watcher emits linesReceived
-    // and we place each new appId on the home grid.
-    // ============================================================
-    PendingAddsInbox {
-        id: pendingAdds
-        filePath: "/home/phablet/.config/home-spike/pending-adds.txt"
-        onLinesReceived: (appIds) => pages.addAppsToHome(appIds)
-    }
-
+    // The "Add to HomeSpike" inbox is now the reactive `hsSettings.pendingAdds`
+    // key handled above — no separate poller component.
 
     // TileBody now lives in tiles/TileBody.qml — instantiated as
     // a Component below where the per-page and per-dock delegates live.
@@ -401,6 +417,7 @@ Item {
                                 controller: dragController
                                 clock: localeClock
                                 catalog: widgetCatalog
+                                weatherService: weatherSvc
                                 contentAngle: root.deviceAngle
                                 onRemoveRequested: (id) => pages.removeWidget(id)
                                 onSettingsRequested: (id) => widgetSettingsOverlay.open(id)
@@ -652,6 +669,7 @@ Item {
         id: widgetSettingsOverlay
         pages: pages
         catalog: widgetCatalog
+        weatherService: weatherSvc
         leftReserve: root.leftReserve
     }
 }

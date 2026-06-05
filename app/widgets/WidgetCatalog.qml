@@ -23,6 +23,7 @@ Item {
     // type name without an explicit import).
     Component { id: clockComponent;    ClockWidget {} }
     Component { id: calendarComponent; CalendarWidget {} }
+    Component { id: weatherComponent;  WeatherWidget {} }
 
     /** Default plate colour (translucent navy) — the universal "background"
      *  colour slot every widget has. */
@@ -63,6 +64,30 @@ Item {
                 { key: "today",   label: "Today",          def: "#ffffff", variants: ["wide"] }
             ],
             component: calendarComponent
+        },
+        {
+            type: "weather", title: "Weather",
+            variants: [ { key: "small", w: 2, h: 2 }, { key: "wide", w: 4, h: 2 } ],
+            // unit "" = follow the system locale; city/lat/lon set in settings.
+            defaults: { background: true, unit: "", city: "", lat: null, lon: null },
+            colorSlots: [
+                { key: "temp",         label: "Temperature",   def: "#ffffff", variants: ["small", "wide"] },
+                { key: "place",        label: "Location",      def: "#9fa9c0", variants: ["small", "wide"] },
+                { key: "condition",    label: "Condition",     def: "#9fa9c0", variants: ["wide"] },
+                { key: "hour",         label: "Forecast time", def: "#9fa9c0", variants: ["wide"] },
+                { key: "forecastTemp", label: "Forecast temp", def: "#ffffff", variants: ["wide"] }
+            ],
+            // Non-colour settings rendered by WidgetSettingsOverlay. `def` is the
+            // value shown selected when the setting is unset.
+            options: [
+                { key: "city", kind: "place", label: "City" },
+                { key: "unit", kind: "segmented", label: "Units", def: "",
+                  choices: [ { v: "", t: "Auto" }, { v: "C", t: "°C" }, { v: "F", t: "°F" } ] },
+                { key: "refresh", kind: "segmented", label: "Auto-refresh", def: 30,
+                  choices: [ { v: 0, t: "Off" }, { v: 15, t: "15m" }, { v: 30, t: "30m" },
+                             { v: 60, t: "1h" }, { v: 180, t: "3h" } ] }
+            ],
+            component: weatherComponent
         }
     ]
 
@@ -89,6 +114,12 @@ Item {
     function defaultsFor(type) {
         var t = typeDef(type);
         return t ? t.defaults : { background: true };
+    }
+
+    /** Non-colour settings controls for a type (city, units, …), or []. */
+    function optionsFor(type) {
+        var t = typeDef(type);
+        return (t && t.options) ? t.options : [];
     }
 
     function componentFor(type) {

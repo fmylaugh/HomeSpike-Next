@@ -72,6 +72,19 @@ Item {
         }
     }
 
+    /** Hour-only label honouring the 12/24h preference, e.g. "4 PM" or "16".
+     *  Used for the weather widget's hourly forecast columns. For the
+     *  "locale-default" preference, infer 12h-vs-24h from whether the locale's
+     *  short time pattern carries an am/pm field. */
+    function hourText(d) {
+        if (!d) d = now;
+        var fmt = systemTimeFormat;
+        if (fmt !== "12-hour" && fmt !== "24-hour") {
+            fmt = /[Aa]/.test(loc.timeFormat(Locale.ShortFormat)) ? "12-hour" : "24-hour";
+        }
+        return (fmt === "12-hour") ? Qt.formatTime(d, "h AP") : Qt.formatTime(d, "HH");
+    }
+
     /** Weekday + month + day (locale names), e.g. "Tue, Jun 25". */
     function dateText(d) {
         if (!d) d = now;

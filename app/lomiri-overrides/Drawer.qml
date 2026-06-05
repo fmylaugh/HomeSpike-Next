@@ -762,24 +762,12 @@ FocusScope {
                     id: addRowMouse
                     anchors.fill: parent
                     onClicked: {
-                        var path = "/home/phablet/.config/home-spike/pending-adds.txt";
-                        var existing = "";
-                        var xhrR = new XMLHttpRequest();
-                        xhrR.open("GET", "file://" + path, false);
-                        try {
-                            xhrR.send();
-                            existing = xhrR.responseText || "";
-                        } catch (e) {
-                            // File may not exist yet (HomeSpike never started).
-                            // Treat as empty inbox; the PUT below will create it.
-                        }
-                        var xhrW = new XMLHttpRequest();
-                        xhrW.open("PUT", "file://" + path, false);
-                        try {
-                            xhrW.send(existing + homeSpikeMenu.appId + "\n");
-                        } catch (e) {
-                            console.error("HomeSpike: failed to write " + path + " — " + e);
-                        }
+                        // Append the appId to the reactive gsettings inbox;
+                        // HomeSpike picks it up on change and clears it. No file,
+                        // no polling. (Append in case more than one is queued
+                        // before HomeSpike drains it.)
+                        var cur = hsSettings.pendingAdds || "";
+                        hsSettings.pendingAdds = cur + homeSpikeMenu.appId + "\n";
                         homeSpikeMenu.visible = false;
                     }
                 }

@@ -80,9 +80,9 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   cp /opt/home-spike/lomiri-overrides/Stage.qml /usr/share/lomiri/Stage/Stage.qml
   chmod 644 /usr/share/lomiri/Stage/Stage.qml
 
-  # ----- Inbox file used by Drawer→HomeSpike IPC -----
+  # ----- HomeSpike config dir (holds home-spike.conf). The Drawer→HomeSpike
+  #       "Add to HomeSpike" IPC is now a reactive gsettings key, not a file. -----
   mkdir -p /home/phablet/.config/home-spike
-  touch /home/phablet/.config/home-spike/pending-adds.txt
   chown -R phablet:phablet /home/phablet/.config/home-spike
 
   # ----- GSettings schema for the master kill-switch -----

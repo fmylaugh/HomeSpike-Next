@@ -38,6 +38,9 @@ Item {
     property var controller: null
     property var clock: null
     property var catalog: null
+    /** Shared weather data layer — injected into widgets that expose a
+     *  `service` property (the weather widget); ignored by the rest. */
+    property var weatherService: null
 
     /** Device orientation angle (deg). The widget's box stays put in the
      *  (portrait) grid; its CONTENT rotates by this so it stays upright as the
@@ -86,6 +89,14 @@ Item {
         readonly property real dragThreshold: units.gu(2)
 
         onPressAndHold: { if (!host.editMode) host.editModeRequested(); }
+        // Outside edit mode, a tap asks the widget to refresh (if it offers a
+        // handleTap hook — the weather widget does). A drag/long-press won't fire
+        // onClicked, so this only catches genuine taps.
+        onClicked: {
+            if (host.editMode) return;
+            var w = widgetLoader.item;
+            if (w && w.handleTap) w.handleTap();
+        }
         onPressed: {
             pressX = mouseX; pressY = mouseY; dragStarted = false;
             if (controller && controller.dragging) controller.abort();
@@ -142,6 +153,9 @@ Item {
                     item.variant = host.widgetVariant;
                     item.background = host._background;
                     item.colors = host._colors;
+                    item.settings = host._settings;
+                    // Inject the weather data layer only into widgets that want it.
+                    if (item.hasOwnProperty("service")) item.service = host.weatherService;
                 }
             }
 

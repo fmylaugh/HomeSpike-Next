@@ -23,5 +23,15 @@
         their HomeSpike-specific code paths short-circuit).
       </description>
     </key>
+    <key name="pending-adds" type="s">
+      <default>''</default>
+      <summary>"Add to HomeSpike" inbox</summary>
+      <description>
+        Reactive cross-component inbox. The patched Drawer appends an appId
+        here when the user picks "Add to HomeSpike"; HomeSpike places it on the
+        grid and clears the key. Newline-separated. Replaces the old polled file
+        inbox (no timer, no file:// XHR).
+      </description>
+    </key>
   </schema>
 </schemalist>
