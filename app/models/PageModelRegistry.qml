@@ -34,23 +34,27 @@ Item {
     /** Injected by parent. Provides appHarvest.count + itemAt(i). */
     property var appHarvest: null
 
+    /** Injected by parent. WidgetCatalog — resolves a widget (type,variant)
+     *  to its footprint {w,h} and default settings. May be null very early;
+     *  every read is guarded with a 2x2 fallback. */
+    property var catalog: null
+
     /** Hard cap on swipeable pages. */
     readonly property int maxPages: 5
 
     /** Hard cap on dock entries. */
     readonly property int dockMax: 5
 
-    /** Number of columns in the snap/autoFill grid. Bound by the parent to the
-     *  live viewport width (≥4) so landscape uses the extra width instead of
-     *  clipping rows. autoFill reflows cleanly when this changes. */
+    /** Number of columns in the snap/autoFill grid. Fixed (the parent sets 4) —
+     *  the home uses one portrait layout in every orientation and never reflows
+     *  the column count. */
     property int cols: 4
 
-    /** True in landscape (bound by the parent). snap/free keep SEPARATE saved
-     *  positions per orientation: the live model holds the active orientation's
-     *  position, and the layout reloads when this flips. autoFill is order-only
-     *  and shared across orientations. */
-    property bool landscape: false
-    onLandscapeChanged: rebuildVisible()
+    /** Canonical portrait row count (bound by the parent). Used as the row cap
+     *  when finding room for a widget footprint. Stable across rotation — the
+     *  home uses one fixed layout, so "does the page have room" doesn't change
+     *  when the viewport gets shorter in landscape. */
+    property int gridRows: 6
 
     /** Per-page models (fixed pool — only the first pageCount are used). */
     ListModel { id: page0 }
@@ -131,50 +135,64 @@ Item {
     }
 
     /**
-     * If bag[mode] is empty but bag.autoFill (or snap) has entries, copy
-     * them in with default mode-appropriate positions. No-op when bag[mode]
-     * already has data — preserves whatever the user arranged last time.
+     * If bag[mode] is empty but another mode's slot has entries, seed it from
+     * the first non-empty slot (autoFill → snap → free), giving each entry a
+     * default position for `mode`. No-op when bag[mode] already has data — so
+     * whatever the user arranged last time is preserved. Folders and widgets
+     * are carried over intact (not flattened to their member/app ids), so they
+     * don't vanish on the first switch between layouts. Widgets are skipped
+     * when seeding autoFill, since they only live in snap/free.
      */
     function _seedEmptyModeSlot(bag, mode) {
         if (bag[mode] && bag[mode].length > 0) return;
-        var seedIds = [];
-        if (bag.autoFill && bag.autoFill.length > 0) {
-            seedIds = bag.autoFill.slice();
-        } else if (bag.snap && bag.snap.length > 0) {
-            for (var i = 0; i < bag.snap.length; ++i) {
-                if (bag.snap[i] && bag.snap[i].appId) seedIds.push(bag.snap[i].appId);
-            }
-        } else if (bag.free && bag.free.length > 0) {
-            for (var j = 0; j < bag.free.length; ++j) {
-                if (bag.free[j] && bag.free[j].appId) seedIds.push(bag.free[j].appId);
-            }
-        }
-        if (seedIds.length === 0) return;
-        bag[mode] = _buildEntriesForMode(seedIds, mode);
+        var src = null;
+        if (bag.autoFill && bag.autoFill.length > 0)      src = bag.autoFill;
+        else if (bag.snap && bag.snap.length > 0)         src = bag.snap;
+        else if (bag.free && bag.free.length > 0)         src = bag.free;
+        if (!src) return;
+        bag[mode] = _buildEntriesForMode(src, mode);
     }
 
     /**
-     * Lay out a list of appIds in a shape valid for `mode`. autoFill is a
-     * bare array; snap/free assign default positions on a 4-column grid.
+     * Re-shape a list of entries (appId strings, app objects, folder objects,
+     * or widget objects) into a list valid for `mode`. autoFill is a bare
+     * array of appIds (+ folder objects); snap/free assign default positions.
+     * Identity (folder id/name/apps, widget id/type/variant/settings) is kept.
      */
-    function _buildEntriesForMode(appIds, mode) {
+    function _buildEntriesForMode(entries, mode) {
         var out = [];
-        for (var i = 0; i < appIds.length; ++i) {
-            if (mode === "autoFill") {
-                out.push(appIds[i]);
-            } else if (mode === "snap") {
-                out.push({ appId: appIds[i], col: i % cols, row: Math.floor(i / cols) });
-            } else if (mode === "free") {
-                var c = i % cols;
-                var r = Math.floor(i / cols);
-                out.push({
-                    appId: appIds[i],
-                    xFrac: (c + 0.5) / cols,
-                    yFrac: Math.min(0.92, (r + 0.5) / 8)
-                });
+        var seq = 0;
+        for (var i = 0; i < entries.length; ++i) {
+            var e = entries[i];
+            var isFolder = e && typeof e === "object" && e.folder === true;
+            var isWidget = e && typeof e === "object" && e.widget === true;
+            if (isWidget && mode === "autoFill") continue;   // widgets are snap/free only
+            if (isFolder) {
+                out.push(_assign({ folder: true, id: e.id, name: e.name,
+                                   apps: Array.isArray(e.apps) ? e.apps.slice() : [] },
+                                 _modeDefaultPos(mode, seq++)));
+            } else if (isWidget) {
+                out.push(_assign({ widget: true, id: e.id, type: e.type,
+                                   variant: e.variant, settings: e.settings || {} },
+                                 _modeDefaultPos(mode, seq++)));
+            } else {
+                var appId = (typeof e === "string") ? e : (e ? e.appId : null);
+                if (!appId) continue;
+                if (mode === "autoFill") out.push(appId);
+                else out.push(_assign({ appId: appId }, _modeDefaultPos(mode, seq++)));
             }
         }
         return out;
+    }
+
+    /** Default position object for a sequence index in a given mode. */
+    function _modeDefaultPos(mode, seq) {
+        if (mode === "snap") return { col: seq % cols, row: Math.floor(seq / cols) };
+        if (mode === "free") {
+            var c = seq % cols, r = Math.floor(seq / cols);
+            return { xFrac: (c + 0.5) / cols, yFrac: Math.min(0.92, (r + 0.5) / 8) };
+        }
+        return {};  // autoFill — order only, no explicit position
     }
 
     /**
@@ -241,6 +259,17 @@ Item {
                     live.push({ folder: true, entry: entry,
                                 id: entry.id || _newFolderId(),
                                 name: entry.name || "Folder", members: ids });
+                } else if (entry && typeof entry === "object" && entry.widget === true) {
+                    // Standalone widget — consumes no app source. Resolve its
+                    // footprint from the catalog (2x2 fallback if unknown).
+                    var dims = (catalog && catalog.variant(entry.type, entry.variant))
+                               || { key: entry.variant || "", w: 2, h: 2 };
+                    live.push({ widget: true, entry: entry,
+                                id: entry.id || _newWidgetId(),
+                                wtype: entry.type || "",
+                                wvar: dims.key || entry.variant || "",
+                                w: dims.w, h: dims.h,
+                                settings: entry.settings ? JSON.stringify(entry.settings) : "" });
                 } else {
                     var appId = (typeof entry === "string") ? entry : (entry ? entry.appId : null);
                     if (!appId || hiddenSet[appId] || dockSet[appId]) continue;
@@ -250,34 +279,10 @@ Item {
                 }
             }
 
-            // Landscape snap default packing: tiles with an explicit landscape
-            // cell keep it; the rest pack into the free cells IN PORTRAIT
-            // READING ORDER (row-major by their portrait col/row). This makes
-            // the default landscape layout a reflow of portrait — the same
-            // tiles stay visible, just spread across more columns — instead of
-            // the raw storage order, which clipped different tiles each way.
-            var packCell = {};  // live-index -> {col,row}
-            if (mode === "snap" && landscape) {
-                var occ = {};
-                var unset = [];
-                for (var oi = 0; oi < live.length; ++oi) {
-                    var cl = _entryNum(live[oi].entry, "colL");
-                    var rl = _entryNum(live[oi].entry, "rowL");
-                    if (cl !== null && rl !== null) occ[cl + "," + rl] = true;
-                    else unset.push(oi);
-                }
-                unset.sort(function(a, b) {
-                    return _portraitRank(live[a].entry) - _portraitRank(live[b].entry);
-                });
-                var cur = 0;
-                for (var ui = 0; ui < unset.length; ++ui) {
-                    var fc = _nextFreeCell(occ, cur);
-                    cur = fc.next; occ[fc.col + "," + fc.row] = true;
-                    packCell[unset[ui]] = fc;
-                }
-            }
-
-            // Pass 2: assign the ACTIVE orientation's position and append.
+            // Pass 2: assign each tile's (single, orientation-independent)
+            // position and append. autoFill packs by index; snap reads col/row;
+            // free reads xFrac/yFrac. The same values are used in every
+            // orientation — the home doesn't reflow.
             for (var li = 0; li < live.length; ++li) {
                 var e = live[li];
                 var col = -1, rowI = -1, xFrac = -1, yFrac = -1;
@@ -285,28 +290,16 @@ Item {
                 if (mode === "autoFill") {
                     col = li % cols; rowI = Math.floor(li / cols);
                 } else if (mode === "snap") {
-                    if (landscape) {
-                        var clx = _entryNum(e.entry, "colL");
-                        var rlx = _entryNum(e.entry, "rowL");
-                        if (clx !== null && rlx !== null) { col = clx; rowI = rlx; }
-                        else { var pcc = packCell[li]; col = pcc.col; rowI = pcc.row; }
-                    } else {
-                        col  = _entryNum(e.entry, "col");  if (col  === null) col  = -1;
-                        rowI = _entryNum(e.entry, "row");  if (rowI === null) rowI = -1;
-                    }
+                    col  = _entryNum(e.entry, "col");  if (col  === null) col  = -1;
+                    rowI = _entryNum(e.entry, "row");  if (rowI === null) rowI = -1;
                 } else if (mode === "free") {
-                    if (landscape) {
-                        // Default landscape free to the portrait fraction until
-                        // the user drags it (then xFracL/yFracL take over).
-                        xFrac = _numOr(_entryNum(e.entry, "xFracL"), _numOr(_entryNum(e.entry, "xFrac"), 0.0));
-                        yFrac = _numOr(_entryNum(e.entry, "yFracL"), _numOr(_entryNum(e.entry, "yFrac"), 0.0));
-                    } else {
-                        xFrac = _numOr(_entryNum(e.entry, "xFrac"), 0.0);
-                        yFrac = _numOr(_entryNum(e.entry, "yFrac"), 0.0);
-                    }
+                    xFrac = _numOr(_entryNum(e.entry, "xFrac"), 0.0);
+                    yFrac = _numOr(_entryNum(e.entry, "yFrac"), 0.0);
                 }
 
-                if (e.folder) {
+                if (e.widget) {
+                    pageModels[p].append(_makeWidgetRow(e.id, e.wtype, e.wvar, e.w, e.h, e.settings, col, rowI, xFrac, yFrac));
+                } else if (e.folder) {
                     pageModels[p].append(_makeFolderRow(e.id, e.name, e.members, col, rowI, xFrac, yFrac));
                 } else {
                     pageModels[p].append(_makeRow(e.srcApp, col, rowI, xFrac, yFrac));
@@ -320,28 +313,7 @@ Item {
         return (entry && typeof entry[field] === "number") ? entry[field] : null;
     }
 
-    /** Row-major rank of a saved entry's PORTRAIT cell (unplaced sorts last).
-     *  Used to pack the landscape default in portrait reading order. */
-    function _portraitRank(entry) {
-        var c = _entryNum(entry, "col");
-        var r = _entryNum(entry, "row");
-        if (c === null || r === null) return 1e9;
-        return r * 1000 + c;
-    }
-
     function _numOr(v, fallback) { return (v === null || v === undefined) ? fallback : v; }
-
-    /** Next row-major free cell from `cursor`, skipping `occupied` ("c,r" set). */
-    function _nextFreeCell(occupied, cursor) {
-        var idx = cursor;
-        var max = cols * 64;
-        while (idx < max) {
-            var c = idx % cols, r = Math.floor(idx / cols);
-            if (!occupied[c + "," + r]) return { col: c, row: r, next: idx + 1 };
-            idx++;
-        }
-        return { col: 0, row: 0, next: cursor + 1 };
-    }
 
     /**
      * Any harvested app that wasn't placed in the active mode's saved layout
@@ -398,7 +370,16 @@ Item {
             kind:       "app",
             folderId:   "",
             folderName: "",
-            appsJson:   ""
+            appsJson:   "",
+            // Widget fields — likewise present on every row so the roles lock
+            // as the right types (string/int) regardless of which kind appends
+            // first. Inert for app/folder rows.
+            widgetId:       "",
+            widgetType:     "",
+            widgetVariant:  "",
+            widgetW:        0,
+            widgetH:        0,
+            widgetSettings: ""
         };
     }
 
@@ -422,7 +403,43 @@ Item {
             kind:       "folder",
             folderId:   folderId,
             folderName: folderName,
-            appsJson:   JSON.stringify(appIds)
+            appsJson:   JSON.stringify(appIds),
+            widgetId:       "",
+            widgetType:     "",
+            widgetVariant:  "",
+            widgetW:        0,
+            widgetH:        0,
+            widgetSettings: ""
+        };
+    }
+
+    /**
+     * Build a ListModel row for a widget entry. Carries the same positional
+     * fields as an app/folder row (so it lives in grid cells) plus the widget
+     * identity, footprint span (w,h in cells), and a JSON settings blob.
+     * appId/name/icon are empty — the renderer keys off kind === "widget".
+     */
+    function _makeWidgetRow(id, type, variant, w, h, settingsJson, col, rowI, xFrac, yFrac) {
+        var xf = (typeof xFrac === "number" && xFrac >= 0) ? xFrac : -0.5;
+        var yf = (typeof yFrac === "number" && yFrac >= 0) ? yFrac : -0.5;
+        return {
+            appId: "",
+            name:  "",
+            icon:  "",
+            col:   col,
+            row:   rowI,
+            xFrac: xf,
+            yFrac: yf,
+            kind:       "widget",
+            folderId:   "",
+            folderName: "",
+            appsJson:   "",
+            widgetId:       id,
+            widgetType:     type,
+            widgetVariant:  variant,
+            widgetW:        w,
+            widgetH:        h,
+            widgetSettings: settingsJson || ""
         };
     }
 
@@ -431,15 +448,9 @@ Item {
      * Used by snap mode's auto-place + cross-page drag drops.
      */
     function firstFreeCell(pageIdx) {
-        var occupied = {};
-        var m = pageModels[pageIdx];
-        for (var i = 0; i < m.count; ++i) {
-            var r = m.get(i);
-            if (typeof r.col === "number" && typeof r.row === "number"
-                && r.col >= 0 && r.row >= 0) {
-                occupied[r.col + "," + r.row] = true;
-            }
-        }
+        // Footprint-aware: a widget occupies all the cells it spans, so apps
+        // auto-place around it instead of underneath it.
+        var occupied = _occupiedCells(pageIdx);
         var rowMax = 8;  // soft cap — enough rows on portrait phone
         for (var rr = 0; rr < rowMax; ++rr) {
             for (var cc = 0; cc < cols; ++cc) {
@@ -456,15 +467,7 @@ Item {
      * grid distance; falls back to firstFreeCell if the page is full.
      */
     function nearestFreeCell(pageIdx, col, row) {
-        var occupied = {};
-        var m = pageModels[pageIdx];
-        for (var i = 0; i < m.count; ++i) {
-            var r = m.get(i);
-            if (typeof r.col === "number" && typeof r.row === "number"
-                && r.col >= 0 && r.row >= 0) {
-                occupied[r.col + "," + r.row] = true;
-            }
-        }
+        var occupied = _occupiedCells(pageIdx);  // footprint-aware
         if (!occupied[col + "," + row]) return { col: col, row: row };
 
         var rowMax = 8;  // matches firstFreeCell's soft cap
@@ -512,11 +515,10 @@ Item {
 
     /**
      * Serialize the current pageModels + dockApps back to persist. Writes ONLY
-     * the active mode's per-page slot; other modes are preserved. For snap/free,
-     * the live model holds the ACTIVE orientation's position — we write that to
-     * the active orientation's fields and carry the OTHER orientation's fields
-     * over unchanged from the previously-saved entry, so portrait and landscape
-     * arrangements are remembered independently. Membership/order are shared.
+     * the active mode's per-page slot; the other modes are preserved untouched.
+     * One position per entry (snap → col/row, free → xFrac/yFrac) — the home
+     * uses a single layout in every orientation, so there's nothing to carry
+     * across orientations.
      */
     function persistOrder() {
         var existing = persist.readPageData();
@@ -526,25 +528,25 @@ Item {
         }
         for (var p = 0; p < persist.pageCount; ++p) {
             var bag = existing[p];
-            var oldMap = _existingByKey(bag[mode]);  // before we overwrite it
             var list = [];
             for (var i = 0; i < pageModels[p].count; ++i) {
                 var r = pageModels[p].get(i);
                 if (r.kind === "folder") {
                     var fobj = { folder: true, id: r.folderId, name: r.folderName,
                                  apps: _parseApps(r.appsJson) };
-                    var fOld = oldMap["f:" + r.folderId];
-                    if (mode === "snap")      _assign(fobj, _snapPos(r, fOld));
-                    else if (mode === "free") _assign(fobj, _freePos(r, fOld));
+                    _assign(fobj, _pos(r, mode));
                     list.push(fobj);
+                } else if (r.kind === "widget") {
+                    // Widgets only ever live in the snap/free models (never autoFill).
+                    var wobj = { widget: true, id: r.widgetId, type: r.widgetType,
+                                 variant: r.widgetVariant, settings: _parseSettings(r.widgetSettings) };
+                    _assign(wobj, _pos(r, mode));
+                    list.push(wobj);
                 } else if (mode === "autoFill") {
                     list.push(r.appId);
-                } else if (mode === "snap") {
-                    var so = _snapPos(r, oldMap["a:" + r.appId]); so.appId = r.appId;
-                    list.push(so);
-                } else if (mode === "free") {
-                    var fo = _freePos(r, oldMap["a:" + r.appId]); fo.appId = r.appId;
-                    list.push(fo);
+                } else {
+                    var ao = _pos(r, mode); ao.appId = r.appId;
+                    list.push(ao);
                 }
             }
             bag[mode] = list;
@@ -557,53 +559,13 @@ Item {
         persist.dockOrder = persist.writeJson(dockIds);
     }
 
-    // ----- per-orientation persistence helpers -----
-
     function _assign(dst, src) { for (var k in src) dst[k] = src[k]; return dst; }
 
-    /** Index a saved per-mode list by key: "a:"+appId / "f:"+folderId. */
-    function _existingByKey(listArr) {
-        var map = {};
-        if (!Array.isArray(listArr)) return map;
-        for (var i = 0; i < listArr.length; ++i) {
-            var e = listArr[i];
-            if (e && typeof e === "object") {
-                if (e.folder === true && e.id) map["f:" + e.id] = e;
-                else if (e.appId)              map["a:" + e.appId] = e;
-            }
-        }
-        return map;
-    }
-
-    /** Snap position object: active orientation from the row, other orientation
-     *  carried over from the previously-saved entry. */
-    function _snapPos(r, old) {
-        var o = {};
-        if (landscape) {
-            o.colL = r.col; o.rowL = r.row;
-            if (_entryNum(old, "col") !== null) o.col = old.col;
-            if (_entryNum(old, "row") !== null) o.row = old.row;
-        } else {
-            o.col = r.col; o.row = r.row;
-            if (_entryNum(old, "colL") !== null) o.colL = old.colL;
-            if (_entryNum(old, "rowL") !== null) o.rowL = old.rowL;
-        }
-        return o;
-    }
-
-    /** Free position object: active orientation from the row, other carried over. */
-    function _freePos(r, old) {
-        var o = {};
-        if (landscape) {
-            o.xFracL = r.xFrac; o.yFracL = r.yFrac;
-            if (_entryNum(old, "xFrac") !== null) o.xFrac = old.xFrac;
-            if (_entryNum(old, "yFrac") !== null) o.yFrac = old.yFrac;
-        } else {
-            o.xFrac = r.xFrac; o.yFrac = r.yFrac;
-            if (_entryNum(old, "xFracL") !== null) o.xFracL = old.xFracL;
-            if (_entryNum(old, "yFracL") !== null) o.yFracL = old.yFracL;
-        }
-        return o;
+    /** Position object for a live row in the given mode (autoFill → none). */
+    function _pos(r, mode) {
+        if (mode === "snap") return { col: r.col, row: r.row };
+        if (mode === "free") return { xFrac: r.xFrac, yFrac: r.yFrac };
+        return {};
     }
 
     /**
@@ -961,5 +923,234 @@ Item {
         pageModels[loc.page].remove(loc.index, 1);  // drop the folder tile
         persistOrder();    // write clean pageData (no folder, no member rows)
         rebuildVisible();  // re-apply the hidden set so members stay gone
+    }
+
+    // --------------------------------------------------------------
+    // Widgets
+    // --------------------------------------------------------------
+
+    function _newWidgetId() {
+        return "w-" + Date.now() + "-" + Math.floor(Math.random() * 1000000);
+    }
+
+    function _parseSettings(json) {
+        try {
+            var o = JSON.parse(json || "{}");
+            return (o && typeof o === "object") ? o : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    /** Locate a widget row by id across all visible pages → {page, index} or null. */
+    function _findRowByWidgetId(widgetId) {
+        for (var p = 0; p < persist.pageCount; ++p) {
+            var m = pageModels[p];
+            for (var i = 0; i < m.count; ++i) {
+                var r = m.get(i);
+                if (r.kind === "widget" && r.widgetId === widgetId) {
+                    return { page: p, index: i };
+                }
+            }
+        }
+        return null;
+    }
+
+    /** {col,row → true} set of cells occupied on a page, counting each
+     *  widget's full footprint (apps/folders occupy one cell). Pass
+     *  `excludeIndex` to ignore one row — used when relocating that row so it
+     *  doesn't count itself as an obstacle. */
+    function _occupiedCells(pageIdx, excludeIndex) {
+        var occ = {};
+        var m = pageModels[pageIdx];
+        for (var i = 0; i < m.count; ++i) {
+            if (i === excludeIndex) continue;
+            var r = m.get(i);
+            if (typeof r.col !== "number" || typeof r.row !== "number"
+                || r.col < 0 || r.row < 0) continue;
+            var ww = (r.kind === "widget") ? Math.max(1, r.widgetW) : 1;
+            var hh = (r.kind === "widget") ? Math.max(1, r.widgetH) : 1;
+            for (var dc = 0; dc < ww; ++dc) {
+                for (var dr = 0; dr < hh; ++dr) {
+                    occ[(r.col + dc) + "," + (r.row + dr)] = true;
+                }
+            }
+        }
+        return occ;
+    }
+
+    /** Whether a w×h footprint anchored at (col,row) is entirely free in an
+     *  occupied-cell set. */
+    function _footprintFree(occ, col, row, w, h) {
+        for (var dc = 0; dc < w; ++dc) {
+            for (var dr = 0; dr < h; ++dr) {
+                if (occ[(col + dc) + "," + (row + dr)]) return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Nearest top-left cell to (col,row) where a w×h footprint fits without
+     * overlapping any other tile (ignoring `excludeIndex`, the tile being
+     * moved). Returns the clamped target itself if it's already free, else the
+     * closest free footprint by grid distance, or null if nothing fits.
+     */
+    function nearestFreeFootprint(pageIdx, col, row, w, h, excludeIndex) {
+        var occ = _occupiedCells(pageIdx, excludeIndex);
+        var maxCol = Math.max(0, cols - w);
+        var maxRow = Math.max(0, gridRows - h);
+        var tc = Math.min(Math.max(0, col), maxCol);
+        var tr = Math.min(Math.max(0, row), maxRow);
+        if (_footprintFree(occ, tc, tr, w, h)) return { col: tc, row: tr };
+
+        var best = null, bestDist = Infinity;
+        for (var r = 0; r <= maxRow; ++r) {
+            for (var c = 0; c <= maxCol; ++c) {
+                if (!_footprintFree(occ, c, r, w, h)) continue;
+                var dc = c - tc, dr = r - tr, d = dc * dc + dr * dr;
+                if (d < bestDist) { bestDist = d; best = { col: c, row: r }; }
+            }
+        }
+        return best;
+    }
+
+    /** First top-left cell on a page where a w×h footprint fits within the
+     *  visible grid without overlapping an occupied cell (row-major). Returns
+     *  null when there's no room — the caller then spills to another page. */
+    function _firstFreeFootprint(pageIdx, w, h) {
+        var occ = _occupiedCells(pageIdx);
+        var maxCol = Math.max(0, cols - w);
+        var maxRow = Math.max(0, gridRows - h);
+        for (var r = 0; r <= maxRow; ++r) {
+            for (var c = 0; c <= maxCol; ++c) {
+                if (_footprintFree(occ, c, r, w, h)) return { col: c, row: r };
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Add a widget to a page. Widgets are a snap/free-only feature — bail in
+     * autoFill (the picker shows a hint instead). Footprint + default settings
+     * come from the catalog; snap lands it on the first free footprint cell,
+     * free drops it near the top-left for the user to drag. Persists.
+     */
+    function addWidget(pageIdx, type, variant) {
+        var mode = persist.placementMode;
+        if (mode !== "snap" && mode !== "free") return -1;
+        if (pageIdx < 0 || pageIdx >= persist.pageCount) pageIdx = 0;
+
+        var dims = (catalog && catalog.variant(type, variant)) || { key: variant || "", w: 2, h: 2 };
+        var defs = (catalog && catalog.defaultsFor(type)) || { background: true };
+        // Colours start empty — the widget falls back to the catalog defaults
+        // until the user customises a section.
+        var settingsJson = JSON.stringify({ background: defs.background });
+
+        var target = pageIdx;
+        var col = -1, rowI = -1, xFrac = -1, yFrac = -1;
+
+        if (mode === "snap") {
+            // First page from pageIdx onward with room for the footprint.
+            var cell = null;
+            for (var p = pageIdx; p < persist.pageCount && !cell; ++p) {
+                var c = _firstFreeFootprint(p, dims.w, dims.h);
+                if (c) { target = p; cell = c; }
+            }
+            if (!cell) {
+                // Nothing fits anywhere — add a fresh page if we're under the
+                // cap and drop it there; otherwise place on the requested page.
+                if (persist.pageCount < maxPages) {
+                    persist.pageCount = persist.pageCount + 1;
+                    target = persist.pageCount - 1;
+                } else {
+                    target = pageIdx;
+                }
+                cell = { col: 0, row: 0 };
+            }
+            col = cell.col; rowI = cell.row;
+        } else {  // free — overlap allowed; drop it on the requested page
+            xFrac = 0.08; yFrac = 0.08;
+        }
+
+        pageModels[target].append(
+            _makeWidgetRow(_newWidgetId(), type, dims.key || variant, dims.w, dims.h,
+                           settingsJson, col, rowI, xFrac, yFrac));
+        persistOrder();
+        return target;   // caller redirects the view to this page
+    }
+
+    /** Remove a widget from HomeSpike. Persists. */
+    function removeWidget(widgetId) {
+        var loc = _findRowByWidgetId(widgetId);
+        if (!loc) return;
+        pageModels[loc.page].remove(loc.index, 1);
+        persistOrder();
+    }
+
+    /** Merge `obj` into a widget's settings JSON (e.g. {background:false}).
+     *  Persists. */
+    function updateWidgetSettings(widgetId, obj) {
+        var loc = _findRowByWidgetId(widgetId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var cur = _parseSettings(m.get(loc.index).widgetSettings);
+        for (var k in obj) cur[k] = obj[k];
+        m.setProperty(loc.index, "widgetSettings", JSON.stringify(cur));
+        persistOrder();
+    }
+
+    /**
+     * Set one section's colour on a widget (e.g. slot "time" / "month" /
+     * "background"). Updates the live model so the widget repaints immediately,
+     * but does NOT persist — the colour picker fires this continuously while
+     * dragging; the caller invokes persistOrder() once when the picker closes.
+     */
+    function setWidgetColor(widgetId, slot, color) {
+        var loc = _findRowByWidgetId(widgetId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var cur = _parseSettings(m.get(loc.index).widgetSettings);
+        if (!cur.colors || typeof cur.colors !== "object") cur.colors = {};
+        cur.colors[slot] = color;
+        m.setProperty(loc.index, "widgetSettings", JSON.stringify(cur));
+    }
+
+    /** Switch a widget to a different size preset, reclamping its snap cell so
+     *  the new footprint stays on-screen. Persists. */
+    function setWidgetVariant(widgetId, key) {
+        var loc = _findRowByWidgetId(widgetId);
+        if (!loc) return;
+        var m = pageModels[loc.page];
+        var r = m.get(loc.index);
+        var dims = (catalog && catalog.variant(r.widgetType, key)) || null;
+        if (!dims) return;
+        m.setProperty(loc.index, "widgetVariant", dims.key);
+        m.setProperty(loc.index, "widgetW", dims.w);
+        m.setProperty(loc.index, "widgetH", dims.h);
+        if (persist.placementMode === "snap" && r.col >= 0) {
+            // Re-seat the (possibly larger) footprint so it stays on-screen and
+            // doesn't overlap other tiles. (r still holds the pre-resize cell.)
+            var cell = nearestFreeFootprint(loc.page, r.col, r.row, dims.w, dims.h, loc.index);
+            if (cell) {
+                if (r.col !== cell.col) m.setProperty(loc.index, "col", cell.col);
+                if (r.row !== cell.row) m.setProperty(loc.index, "row", cell.row);
+            } else {
+                var maxCol = Math.max(0, cols - dims.w);
+                var maxRow = Math.max(0, 8 - dims.h);
+                if (r.col > maxCol) m.setProperty(loc.index, "col", maxCol);
+                if (r.row > maxRow) m.setProperty(loc.index, "row", maxRow);
+            }
+        }
+        persistOrder();
+    }
+
+    /** {type, variant, settings} for a widget (for the settings sheet), or null. */
+    function widgetInfo(widgetId) {
+        var loc = _findRowByWidgetId(widgetId);
+        if (!loc) return null;
+        var r = pageModels[loc.page].get(loc.index);
+        return { type: r.widgetType, variant: r.widgetVariant,
+                 settings: _parseSettings(r.widgetSettings) };
     }
 }

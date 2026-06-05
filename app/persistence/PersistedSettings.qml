@@ -37,7 +37,16 @@ Item {
         //   autoFill: {folder:true, id, name, apps:[appId,...]}
         //   snap:     {folder:true, id, name, apps:[...], col, row}
         //   free:     {folder:true, id, name, apps:[...], xFrac, yFrac}
-        // Legacy shape `[[appId,...],...]` is migrated into .autoFill on read.
+        // Or a WIDGET object (snap/free only — never autoFill or the dock).
+        // `type`+`variant` resolve to a footprint via WidgetCatalog; `settings`
+        // holds {background, colors:{slot:hex}}:
+        //   snap: {widget:true, id, type, variant, settings, col, row}
+        //   free: {widget:true, id, type, variant, settings, xFrac, yFrac}
+        // One position per entry — the home uses a single layout in every
+        // orientation (it doesn't reflow). Legacy per-orientation fields
+        // (colL/rowL, xFracL/yFracL) from older builds are ignored on read and
+        // dropped on the next save. Legacy `[[appId,...],...]` shape migrates
+        // into .autoFill on read.
         property string pageData:     '[{"autoFill":[],"snap":[],"free":[]}]'
         property int    pageCount:    1
         property string hiddenAppIds: "[]"

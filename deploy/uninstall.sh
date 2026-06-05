@@ -42,6 +42,7 @@ fi
   for target in \
       /usr/share/lomiri/Shell.qml \
       /usr/share/lomiri/Launcher/Drawer.qml \
+      /usr/share/lomiri/Launcher/LauncherDelegate.qml \
       /usr/share/lomiri/Stage/Spread/Spread.qml \
       /usr/share/lomiri/Stage/Stage.qml; do
     if test -f \${target}.orig; then

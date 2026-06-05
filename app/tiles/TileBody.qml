@@ -35,6 +35,11 @@ Item {
      *  when Lomiri's side panel narrows the available width. */
     property real iconSize: units.gu(6)
 
+    /** Device orientation angle (deg). The home grid stays portrait; the
+     *  icon + label rotate in place by this so they stay upright as the phone
+     *  turns (iOS-style). 0 in portrait. */
+    property int contentAngle: 0
+
     // ---- Folder fields (kind === "folder") ----
     /** "app" (single icon, launches) or "folder" (2x2 preview, opens). */
     property string kind: "app"
@@ -163,6 +168,11 @@ Item {
     Column {
         anchors.centerIn: parent
         spacing: units.gu(0.5)
+
+        // Re-orient the icon + label as a unit when the device turns. The grid
+        // itself never rotates — only this content does.
+        rotation: body.contentAngle
+        Behavior on rotation { RotationAnimation { duration: 250; direction: RotationAnimation.Shortest } }
 
         Item {
             id: iconHolder

@@ -26,6 +26,7 @@ import "inbox"
 import "models"
 import "drag"
 import "tiles"
+import "widgets"
 import "chrome"
 import "overlays"
 
@@ -74,24 +75,41 @@ Item {
     }
     readonly property bool uiEnabled: hsSettings.enabled
 
+    // ---- Device orientation (iOS-style: the home stays portrait — the shell
+    // override locks it — and the icons/labels/widget-content re-orient instead
+    // of the whole screen). The PHYSICAL device angle comes from the orientation
+    // sensor (the shell's own angle is pinned to portrait). Loaded via a Loader
+    // so a missing QtSensors plugin degrades gracefully (angle stays 0) instead
+    // of breaking the whole home. 0 = upright portrait; 90/180/270 as it turns. ----
+    property int deviceAngle: orientationProbe.item ? orientationProbe.item.angle : 0
+    Loader {
+        id: orientationProbe
+        source: Qt.resolvedUrl("sensors/OrientationProbe.qml")
+        active: root.uiEnabled
+        asynchronous: true
+    }
+
     // ---- Core modules ----
     PersistedSettings { id: persist }
     WallpaperResolver { id: wallpaper }
     AppHarvester      { id: appHarvest }
 
+    // Widget framework: shared clock/locale source + the type registry.
+    LocaleClock   { id: localeClock }
+    WidgetCatalog { id: widgetCatalog }
+
     PageModelRegistry {
         id: pages
         persist: persist
         appHarvest: appHarvest
-        // Column count tracks the live grid width: ~4 in portrait, more in
-        // landscape so the wider screen holds more icons per row instead of
-        // overflowing the (shorter) height. Never below 4. autoFill reflows
-        // automatically; snap keeps each tile's saved column.
-        cols: pagesView.width > 0
-              ? Math.max(4, Math.floor((pagesView.width - units.gu(2)) / units.gu(11)))
-              : 4
-        // Drives separate per-orientation snap/free layouts; reloads on flip.
-        landscape: pagesView.landscape
+        catalog: widgetCatalog
+        // Fixed 4-column portrait layout — identical in every orientation. The
+        // home no longer reflows; rotating just re-orients items in place.
+        cols: 4
+        // Canonical portrait row count (for widget-footprint room). Derived from
+        // the LONG screen edge so it's stable across rotation — a widget's "does
+        // it fit" check doesn't change when the viewport becomes shorter.
+        gridRows: Math.max(1, Math.floor(Math.max(pagesView.width, pagesView.height) / units.gu(11)))
     }
 
     Component.onCompleted: {
@@ -177,15 +195,17 @@ Item {
         // contentX/width did not.
         readonly property int currentPage: currentIndex
 
-        // Landscape (wider than tall): pack every tile into the wider grid so
-        // nothing is clipped by the reduced height. Portrait keeps the saved
-        // per-mode layout — rotating never rewrites it.
-        readonly property bool landscape: width > height
-
         // Shared grid geometry — used for autoFill + snap rendering AND
         // by DragController to translate a drop point into (col,row).
         readonly property real gridLeftMargin: units.gu(1)
         readonly property real gridRightMargin: units.gu(1)
+        // The grid is a fixed, portrait-proportioned block: its width tracks the
+        // SHORTER screen edge, so it looks identical in portrait and is centered
+        // (wallpaper on the sides) in landscape — nothing reflows or stretches.
+        readonly property real blockW: Math.min(width, height)
+        readonly property real blockOffsetX: Math.max(0, (width - blockW) / 2)
+        readonly property real cellW: blockW > 0
+            ? (blockW - gridLeftMargin - gridRightMargin) / pages.cols : units.gu(9)
         // Row pitch is derived from the live viewport height: fit as many
         // ~11gu rows as possible, then stretch so they divide the height
         // EXACTLY. This guarantees the bottom row is never sliced off and
@@ -202,7 +222,6 @@ Item {
             width: pagesView.width
             height: pagesView.height
             property int pageIndex: index
-            readonly property real cellW: (width - pagesView.gridLeftMargin - pagesView.gridRightMargin) / pages.cols
 
             // Long-press bare grid space toggles edit mode. Declared BEFORE the
             // tile Repeater so tiles (declared after) win presses on their own
@@ -224,8 +243,14 @@ Item {
                 model: pages.pageModels[pageDelegate.pageIndex]
                 delegate: Item {
                     id: tileWrap
-                    width: pagesView.tileW
-                    height: pagesView.tileH
+
+                    // Widgets span multiple cells and sit top-left in their
+                    // footprint; apps/folders are a single centred cell.
+                    readonly property bool isWidget: model.kind === "widget"
+                    width: isWidget ? Math.max(1, model.widgetW) * pagesView.cellW
+                                    : pagesView.tileW
+                    height: isWidget ? Math.max(1, model.widgetH) * pagesView.cellH
+                                     : pagesView.tileH
 
                     // Swell slightly when a dragged app is hovering over this
                     // tile to merge into it — the "drop here to make a folder"
@@ -239,31 +264,53 @@ Item {
                     // switch source field when placementMode changes.
                     readonly property string mode: persist.placementMode
                     x: {
-                        // autoFill packs by index (reflows with the column count,
-                        // so it uses the wider landscape grid). snap/free use the
-                        // model's ACTIVE position, which the model already loaded
-                        // for the current orientation — landscape and portrait
-                        // each keep their own saved snap/free layout.
+                        // All branches sit inside the centered, fixed-width grid
+                        // block (off = blockOffsetX; cw = block cell width), so
+                        // the layout is identical in portrait and just centered
+                        // in landscape.
+                        var off = pagesView.blockOffsetX;
+                        var cw = pagesView.cellW;
+                        if (tileWrap.isWidget) {
+                            // Top-left placement (no per-cell centering).
+                            if (mode === "free") {
+                                var fx = (model.xFrac > 0.001) ? model.xFrac : 0.08;
+                                return off + Math.max(0, Math.min(fx * pagesView.blockW,
+                                                                  pagesView.blockW - width));
+                            }
+                            var wc = model.col >= 0
+                                     ? Math.min(model.col, Math.max(0, pages.cols - Math.max(1, model.widgetW)))
+                                     : 0;
+                            return off + pagesView.gridLeftMargin + wc * cw;
+                        }
                         if (mode === "autoFill") {
-                            return pagesView.gridLeftMargin
-                                 + (index % pages.cols) * pageDelegate.cellW
-                                 + (pageDelegate.cellW - width) / 2;
+                            return off + pagesView.gridLeftMargin
+                                 + (index % pages.cols) * cw + (cw - width) / 2;
                         }
                         if (mode === "snap") {
-                            // Clamp to the current column count so a tile saved
-                            // at a high column stays on-screen in a narrower grid.
                             var c = model.col >= 0 ? Math.min(model.col, pages.cols - 1) : 0;
-                            return pagesView.gridLeftMargin
-                                 + c * pageDelegate.cellW
-                                 + (pageDelegate.cellW - width) / 2;
+                            return off + pagesView.gridLeftMargin
+                                 + c * cw + (cw - width) / 2;
                         }
-                        // free — values <= 0.001 are treated as "unset"
-                        // (covers both the -0.5 sentinel and stale rows
-                        // truncated to 0 by older builds' int-typed roles).
+                        // free — values <= 0.001 are treated as "unset" (covers
+                        // both the -0.5 sentinel and stale rows truncated to 0).
                         var f = (model.xFrac > 0.001) ? model.xFrac : 0.5;
-                        return f * pageDelegate.width - width / 2;
+                        return off + f * pagesView.blockW - width / 2;
                     }
                     y: {
+                        if (tileWrap.isWidget) {
+                            if (mode === "free") {
+                                var fy = (model.yFrac > 0.001) ? model.yFrac : 0.08;
+                                return Math.max(0, Math.min(fy * pageDelegate.height,
+                                                            pageDelegate.height - height));
+                            }
+                            // Clamp against the CANONICAL portrait row count so
+                            // the widget keeps its saved row (and just clips below
+                            // the fold in landscape) instead of jumping to row 0.
+                            var wr = model.row >= 0
+                                     ? Math.min(model.row, Math.max(0, pages.gridRows - Math.max(1, model.widgetH)))
+                                     : 0;
+                            return wr * pagesView.cellH;
+                        }
                         if (mode === "autoFill") {
                             return Math.floor(index / pages.cols) * pagesView.cellH;
                         }
@@ -303,11 +350,13 @@ Item {
 
                     TileBody {
                         anchors.fill: parent
+                        visible: !tileWrap.isWidget
                         appId: model.appId
                         appName: model.name
                         iconSrc: model.icon
                         container: "grid"
                         showLabel: persist.gridLabels
+                        contentAngle: root.deviceAngle
                         sourcePage: pageDelegate.pageIndex
                         indexInModel: index
                         editMode: root.editMode
@@ -332,6 +381,32 @@ Item {
                         onFolderDeleteRequested: (fid) => pages.deleteFolder(fid)
                         onEditModeRequested: root.editMode = true
                         onLaunchRequested: (id) => root.launchRequested(id)
+                    }
+
+                    // Widget rows render through a WidgetHost, loaded only when
+                    // the row is a widget. It owns the widget's drag + edit
+                    // chrome and injects the shared clock + catalog.
+                    Loader {
+                        active: tileWrap.isWidget
+                        anchors.fill: parent
+                        sourceComponent: Component {
+                            WidgetHost {
+                                widgetId: model.widgetId
+                                widgetType: model.widgetType
+                                widgetVariant: model.widgetVariant
+                                widgetSettings: model.widgetSettings
+                                sourcePage: pageDelegate.pageIndex
+                                indexInModel: index
+                                editMode: root.editMode
+                                controller: dragController
+                                clock: localeClock
+                                catalog: widgetCatalog
+                                contentAngle: root.deviceAngle
+                                onRemoveRequested: (id) => pages.removeWidget(id)
+                                onSettingsRequested: (id) => widgetSettingsOverlay.open(id)
+                                onEditModeRequested: root.editMode = true
+                            }
+                        }
                     }
                 }
             }
@@ -426,6 +501,7 @@ Item {
                         iconSrc: model.icon
                         container: "dock"
                         showLabel: persist.dockLabels
+                        contentAngle: root.deviceAngle
                         indexInModel: index
                         editMode: root.editMode
                         controller: dragController
@@ -471,6 +547,11 @@ Item {
                     pagesView.currentIndex = persist.pageCount - 1;
                 });
             }
+        }
+
+        AddWidgetButton {
+            active: root.uiEnabled && root.editMode
+            onTriggered: widgetPicker.open()
         }
 
         SettingsGearButton {
@@ -548,5 +629,29 @@ Item {
         dragController: dragController
         leftReserve: root.leftReserve
         onLaunchRequested: (id) => root.launchRequested(id)
+    }
+
+    // ----- Widget overlays -----
+    // Picker: add a widget to the current page (snap/free only; shows a hint
+    // in autoFill). Settings sheet: per-widget background / accent / size.
+    WidgetPickerOverlay {
+        id: widgetPicker
+        catalog: widgetCatalog
+        clock: localeClock
+        placementMode: persist.placementMode
+        leftReserve: root.leftReserve
+        onChosen: (type, variant) => {
+            // addWidget spills to the first page with room (adding one if
+            // needed) and returns it — jump there so the new widget is in view.
+            var p = pages.addWidget(pagesView.currentPage, type, variant);
+            if (p >= 0) Qt.callLater(function() { pagesView.currentIndex = p; });
+        }
+    }
+
+    WidgetSettingsOverlay {
+        id: widgetSettingsOverlay
+        pages: pages
+        catalog: widgetCatalog
+        leftReserve: root.leftReserve
     }
 }

@@ -135,9 +135,25 @@ FocusScope {
     // application windows never rotate independently
     property int mainAppWindowOrientationAngle: shellOrientationAngle
 
+    // HomeSpike: true while the launcher/home is the active context — shown
+    // over apps (homeShown) or simply nothing focused. Used to pin the home to
+    // portrait.
+    readonly property bool homeInFocus: hsEnabled && (homeShown || !priv.focusedAppDelegate)
+
     property bool orientationChangesEnabled: !priv.focusedAppDelegate || priv.focusedAppDelegate.orientationChangesEnabled
 
     property int supportedOrientations: {
+        // HomeSpike: keep the HOME screen pinned to portrait — it never rotates;
+        // the icons/labels/widget-content re-orient themselves instead (see
+        // main.qml's OrientationSensor). This is the same lever Lomiri uses to
+        // portrait-lock official phones (DeviceConfiguration sets it to Portrait
+        // for mako/krillin/…): OrientedShell.acceptedOrientationAngle keeps the
+        // current angle when the sensor orientation isn't supported, so the home
+        // holds portrait even with auto-rotate on (Rotation Lock off). A focused
+        // app still rotates normally per its own supportedOrientations below.
+        if (homeInFocus) {
+            return Qt.PortraitOrientation;
+        }
         if (mainApp) {
             switch (mode) {
             case "staged":

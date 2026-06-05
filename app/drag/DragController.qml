@@ -58,12 +58,16 @@ Item {
     property string sourceAppId: ""
     property string sourceName:  ""
     property string sourceIcon:  ""
-    // "app" or "folder" — folders can be reordered/moved but never merge into
-    // another tile or get dropped into the dock.
+    // "app", "folder", or "widget" — folders and widgets can be reordered/
+    // moved but never merge into another tile or get dropped into the dock.
     property string sourceKind:  "app"
     // Member preview icons (up to 4) when dragging a folder, so the floating
     // visual shows the folder itself rather than its first app.
     property var    sourceFolderIcons: []
+    // Footprint (in grid cells) of a dragged widget — sizes the floating ghost
+    // and clamps snap placement so the widget stays fully on-screen.
+    property int    sourceWidgetW: 1
+    property int    sourceWidgetH: 1
 
     /** Emitted when an app is dropped onto another app — caller shows the
      *  name popup, then calls pages.createFolder on confirm. */
@@ -82,6 +86,12 @@ Item {
     // useful on the new page rather than at (0, 0).
     property real lastDragX: 0
     property real lastDragY: 0
+
+    // Cell pitch used to size the floating widget ghost (mirrors the grid).
+    readonly property real _ghostCellW: (pagesView && pagesView.cellW > 0)
+        ? pagesView.cellW : units.gu(11)
+    readonly property real _ghostCellH: (pagesView && pagesView.cellH > 0)
+        ? pagesView.cellH : units.gu(11)
 
     z: 300
     anchors.fill: parent
@@ -122,33 +132,48 @@ Item {
      * app drag fields and would turn a carried folder into a single broken tile.
      */
     function _carryToPageAt(dropPage) {
-        if (sourcePage < 0 || sourceIndex < 0) return;
-        if (sourceIndex >= pages.pageModels[sourcePage].count) return;
+        if (sourcePage < 0 || sourceIndex < 0) return true;
+        if (sourceIndex >= pages.pageModels[sourcePage].count) return true;
 
         var src = pages.pageModels[sourcePage].get(sourceIndex);
         var item = {
             appId: src.appId, name: src.name, icon: src.icon,
             col: -1, row: -1, xFrac: -0.5, yFrac: -0.5,
             kind: src.kind, folderId: src.folderId,
-            folderName: src.folderName, appsJson: src.appsJson
+            folderName: src.folderName, appsJson: src.appsJson,
+            // Carry widget identity so a widget keeps itself across pages.
+            widgetId: src.widgetId, widgetType: src.widgetType,
+            widgetVariant: src.widgetVariant, widgetW: src.widgetW,
+            widgetH: src.widgetH, widgetSettings: src.widgetSettings
         };
         // Position on the drop page from the release point + active mode.
         var mode = persist.placementMode;
         if (mode === "snap") {
             var cell = _computeGridCell(lastDragX, lastDragY);
-            var c = cell ? pages.nearestFreeCell(dropPage, cell.col, cell.row)
-                         : pages.firstFreeCell(dropPage);
-            item.col = c.col;
-            item.row = c.row;
+            if (src.kind === "widget") {
+                // Land on the nearest free FOOTPRINT on the destination page. If
+                // nothing fits, bail (return false) so the caller reverts the
+                // widget to where it was and sends the user back.
+                var w = Math.max(1, src.widgetW), h = Math.max(1, src.widgetH);
+                var tc = cell ? cell.col : 0, tr = cell ? cell.row : 0;
+                var fc = pages.nearestFreeFootprint(dropPage, tc, tr, w, h, -1);
+                if (!fc) return false;
+                item.col = fc.col; item.row = fc.row;
+            } else {
+                var c = cell ? pages.nearestFreeCell(dropPage, cell.col, cell.row)
+                             : pages.firstFreeCell(dropPage);
+                item.col = c.col;
+                item.row = c.row;
+            }
         } else if (mode === "free") {
             var lp = _toPagesViewLocal(lastDragX, lastDragY);
-            var w = Math.max(1, pagesView.width);
             var h = Math.max(1, pagesView.height);
-            item.xFrac = Math.min(0.95, Math.max(0.05, lp.x / w));
+            item.xFrac = Math.min(0.95, Math.max(0.05, _blockXFrac(lp.x)));
             item.yFrac = Math.min(0.95, Math.max(0.05, lp.y / h));
         }
         pages.pageModels[sourcePage].remove(sourceIndex, 1);
         pages.pageModels[dropPage].append(item);
+        return true;
     }
 
     /**
@@ -162,6 +187,10 @@ Item {
         var mode = persist.placementMode;
         // -0.5 sentinel (not -1) keeps the ListModel role typed as real —
         // see PageModelRegistry._makeRow for the full reasoning.
+        // Full uniform shape (incl. folder + widget roles) so that if this is
+        // the FIRST append to a page model, ListModel locks ALL roles — a later
+        // folder/widget add to that page then keeps its fields instead of
+        // having them silently dropped.
         var item = {
             appId: sourceAppId,
             name:  sourceName,
@@ -169,7 +198,10 @@ Item {
             col:   -1,
             row:   -1,
             xFrac: -0.5,
-            yFrac: -0.5
+            yFrac: -0.5,
+            kind: "app", folderId: "", folderName: "", appsJson: "",
+            widgetId: "", widgetType: "", widgetVariant: "",
+            widgetW: 0, widgetH: 0, widgetSettings: ""
         };
         if (mode === "snap") {
             // Land on the cell under the drop point, not the first free slot.
@@ -184,9 +216,8 @@ Item {
             // local (matches pageDelegate-local for the visible page) so
             // the carried tile lands where the user's finger actually is.
             var lp = _toPagesViewLocal(lastDragX, lastDragY);
-            var w = Math.max(1, pagesView.width);
             var h = Math.max(1, pagesView.height);
-            var xf = Math.min(0.95, Math.max(0.05, lp.x / w));
+            var xf = Math.min(0.95, Math.max(0.05, _blockXFrac(lp.x)));
             var yf = Math.min(0.95, Math.max(0.05, lp.y / h));
             item.xFrac = xf;
             item.yFrac = yf;
@@ -207,7 +238,9 @@ Item {
         var item = {
             appId: appId, name: name, icon: icon,
             col: -1, row: -1, xFrac: -0.5, yFrac: -0.5,
-            kind: "app", folderId: "", folderName: "", appsJson: ""
+            kind: "app", folderId: "", folderName: "", appsJson: "",
+            widgetId: "", widgetType: "", widgetVariant: "",
+            widgetW: 0, widgetH: 0, widgetSettings: ""
         };
         if (mode === "snap") {
             var cell = _computeGridCell(rootX, rootY);
@@ -217,9 +250,8 @@ Item {
             item.row = c.row;
         } else if (mode === "free") {
             var lp = _toPagesViewLocal(rootX, rootY);
-            var w = Math.max(1, pagesView.width);
             var h = Math.max(1, pagesView.height);
-            item.xFrac = Math.min(0.95, Math.max(0.05, lp.x / w));
+            item.xFrac = Math.min(0.95, Math.max(0.05, _blockXFrac(lp.x)));
             item.yFrac = Math.min(0.95, Math.max(0.05, lp.y / h));
         }
         pages.pageModels[page].append(item);  // autoFill: position by order
@@ -257,11 +289,13 @@ Item {
         // instead of overwriting. Safe to read on dock rows too; sentinels.
         if (loc.container === "grid") {
             var r = pages.pageModels[loc.page].get(loc.index);
-            sourceKind      = (r.kind === "folder") ? "folder" : "app";
+            sourceKind      = (r.kind === "folder") ? "folder"
+                              : (r.kind === "widget") ? "widget" : "app";
             sourcePrevCol   = (typeof r.col   === "number") ? r.col   : -1;
             sourcePrevRow   = (typeof r.row   === "number") ? r.row   : -1;
             sourcePrevXFrac = (typeof r.xFrac === "number") ? r.xFrac : -1;
             sourcePrevYFrac = (typeof r.yFrac === "number") ? r.yFrac : -1;
+            sourceWidgetW = 1; sourceWidgetH = 1;
             // For a folder, gather member icons so the floating visual renders
             // the folder preview instead of a single app icon.
             if (sourceKind === "folder") {
@@ -273,10 +307,14 @@ Item {
                     if (info) ficons.push(info.icon);
                 }
                 sourceFolderIcons = ficons;
+            } else if (sourceKind === "widget") {
+                sourceWidgetW = Math.max(1, r.widgetW);
+                sourceWidgetH = Math.max(1, r.widgetH);
             }
         } else {
             sourcePrevCol = -1; sourcePrevRow = -1;
             sourcePrevXFrac = -1; sourcePrevYFrac = -1;
+            sourceWidgetW = 1; sourceWidgetH = 1;
         }
         lastDragX = x;
         lastDragY = y;
@@ -347,8 +385,9 @@ Item {
             var persistNow = true;
 
             if (sourceContainer === "grid" && overDock) {
-                if (sourceKind === "folder") {
-                    // Folders are grid-only — discard the live reorder, stay put.
+                if (sourceKind !== "app") {
+                    // Folders and widgets are grid-only — discard the live
+                    // reorder and leave the tile where it was.
                     pages.rebuildVisible();
                     persistNow = false;
                 } else {
@@ -362,7 +401,14 @@ Item {
                        && pagesView.currentPage !== sourcePage) {
                 // Released on a different page than it started → relocate it
                 // there at the drop point (no folder-merge across pages in v1).
-                _carryToPageAt(pagesView.currentPage);
+                if (!_carryToPageAt(pagesView.currentPage)) {
+                    // No room for the widget on the target page — revert to the
+                    // pre-drag layout and send the user back to its page.
+                    pages.rebuildVisible();
+                    persistNow = false;
+                    var backPage = sourcePage;
+                    Qt.callLater(function() { pagesView.currentIndex = backPage; });
+                }
             } else if (sourceContainer === "grid" && !overDock) {
                 // Did we drop on top of another tile? (apps only — a folder
                 // dragged onto a tile just reorders.)
@@ -386,8 +432,6 @@ Item {
                     _snapResolveCollision();
                 } else if (persist.placementMode === "autoFill") {
                     // autoFill reorder is deferred to here (see _handleOverGrid).
-                    // Landscape also runs this path (packed reorder), which only
-                    // changes list order — saved snap col/row are left intact.
                     _autoFillReorder(lastDragX, lastDragY);
                 }
             }
@@ -402,6 +446,7 @@ Item {
         sourceContainer = "";
         sourceKind = "app";
         sourceFolderIcons = [];
+        sourceWidgetW = 1; sourceWidgetH = 1;
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -422,6 +467,7 @@ Item {
         sourceAppId = "";
         sourceKind = "app";
         sourceFolderIcons = [];
+        sourceWidgetW = 1; sourceWidgetH = 1;
         sourcePrevCol = -1; sourcePrevRow = -1;
         sourcePrevXFrac = -1; sourcePrevYFrac = -1;
     }
@@ -587,16 +633,24 @@ Item {
         if (!cell) return;
         var m = pages.pageModels[sourcePage];
         var r = m.get(sourceIndex);
-        if (r.col !== cell.col) m.setProperty(sourceIndex, "col", cell.col);
-        if (r.row !== cell.row) m.setProperty(sourceIndex, "row", cell.row);
+        var c = cell.col, rw = cell.row;
+        if (sourceKind === "widget") {
+            // Clamp the top-left so the widget's footprint stays within the
+            // canonical (portrait) grid.
+            var maxCol = Math.max(0, pages.cols - Math.max(1, sourceWidgetW));
+            var maxRow = Math.max(0, pages.gridRows - Math.max(1, sourceWidgetH));
+            if (c > maxCol) c = maxCol;
+            if (rw > maxRow) rw = maxRow;
+        }
+        if (r.col !== c) m.setProperty(sourceIndex, "col", c);
+        if (r.row !== rw) m.setProperty(sourceIndex, "row", rw);
     }
 
     // --- free: continuously write xFrac/yFrac so the tile follows finger.
     function _freeMoveSource(x, y) {
         var p = _toPagesViewLocal(x, y);
-        var w = Math.max(1, pagesView.width);
         var h = Math.max(1, pagesView.height);
-        var xf = Math.min(0.98, Math.max(0.02, p.x / w));
+        var xf = Math.min(0.98, Math.max(0.02, _blockXFrac(p.x)));
         var yf = Math.min(0.98, Math.max(0.02, p.y / h));
         var m = pages.pageModels[sourcePage];
         m.setProperty(sourceIndex, "xFrac", xf);
@@ -614,21 +668,48 @@ Item {
         return { x: x - pagesView.x, y: y - pagesView.y };
     }
 
-    // --- snap collision swap (fires at endDrag, never mid-drag).
+    /** Fraction (0..1) of a pagesView-local x WITHIN the centered grid block —
+     *  so free-mode placement matches the renderer (which positions at
+     *  blockOffsetX + xFrac*blockW). In portrait the block fills the width, so
+     *  this is just x/width. */
+    function _blockXFrac(localX) {
+        var bw = Math.max(1, pagesView.blockW);
+        return (localX - pagesView.blockOffsetX) / bw;
+    }
+
+    // --- snap collision resolution (fires at endDrag, never mid-drag).
+    // Footprint-aware: a 1x1 tile dropped squarely on another 1x1 tile swaps
+    // (the displaced tile takes our pre-drag cell — the familiar app/folder
+    // behaviour). Anything else — a widget overlapping tiles, or an app/folder
+    // dropped onto a widget's body — relocates the DRAGGED tile to the nearest
+    // cell where its whole footprint is free, so widgets never overlap apps,
+    // folders, or each other.
     function _snapResolveCollision() {
         if (sourcePage < 0 || sourceIndex < 0) return;
         var m = pages.pageModels[sourcePage];
         if (sourceIndex >= m.count) return;
         var src = m.get(sourceIndex);
-        for (var i = 0; i < m.count; ++i) {
-            if (i === sourceIndex) continue;
-            var r = m.get(i);
-            if (r.col === src.col && r.row === src.row) {
-                // Displace the occupant into source's pre-drag cell (swap).
-                m.setProperty(i, "col", sourcePrevCol);
-                m.setProperty(i, "row", sourcePrevRow);
-                return;
+        var w = (src.kind === "widget") ? Math.max(1, src.widgetW) : 1;
+        var h = (src.kind === "widget") ? Math.max(1, src.widgetH) : 1;
+
+        if (w === 1 && h === 1) {
+            for (var i = 0; i < m.count; ++i) {
+                if (i === sourceIndex) continue;
+                var r = m.get(i);
+                var rw = (r.kind === "widget") ? Math.max(1, r.widgetW) : 1;
+                var rh = (r.kind === "widget") ? Math.max(1, r.widgetH) : 1;
+                if (rw === 1 && rh === 1 && r.col === src.col && r.row === src.row) {
+                    m.setProperty(i, "col", sourcePrevCol);
+                    m.setProperty(i, "row", sourcePrevRow);
+                    return;
+                }
             }
+        }
+
+        var cell = pages.nearestFreeFootprint(sourcePage, src.col, src.row, w, h, sourceIndex);
+        if (cell && (cell.col !== src.col || cell.row !== src.row)) {
+            m.setProperty(sourceIndex, "col", cell.col);
+            m.setProperty(sourceIndex, "row", cell.row);
         }
     }
 
@@ -648,14 +729,14 @@ Item {
      */
     function _computeGridCell(x, y) {
         var p = _toPagesViewLocal(x, y);
-        var leftMargin = units.gu(1);
-        var gridWidth  = pagesView.width - 2 * leftMargin;
-        // Use the renderer's live row pitch (derived to tile the viewport)
-        // so a drop lands on the same row the grid actually draws.
-        var cellH      = pagesView.cellH;
-        var cellW      = gridWidth / pages.cols;
+        var leftMargin = pagesView.gridLeftMargin;
+        var cellW      = pagesView.cellW;   // centered-block cell width
+        var cellH      = pagesView.cellH;   // live row pitch
+        var gridWidth  = pages.cols * cellW;
 
-        var pageX = p.x - leftMargin;
+        // Offset into the centered grid block (wallpaper margins in landscape
+        // fall outside [0, gridWidth) and clamp to the nearest edge column).
+        var pageX = p.x - pagesView.blockOffsetX - leftMargin;
         var pageY = p.y;
         if (pageY < 0) return null;
         if (pageX < 0) pageX = 0;
@@ -666,8 +747,8 @@ Item {
         if (col < 0) col = 0;
         if (col >= pages.cols) col = pages.cols - 1;
         if (row < 0) row = 0;
-        // Clamp to rows that actually fit so a low drop can't land a tile in
-        // an off-screen row.
+        // Clamp to rows that actually fit the viewport so a low drop can't land
+        // a tile in an off-screen row.
         if (row > pagesView.gridRows - 1) row = pagesView.gridRows - 1;
         return { col: col, row: row };
     }
@@ -688,10 +769,10 @@ Item {
         var mode = persist.placementMode;
 
         var leftMargin = pagesView.gridLeftMargin;
-        var gridWidth  = pagesView.width - leftMargin - pagesView.gridRightMargin;
-        var cellW      = gridWidth / pages.cols;
+        var off        = pagesView.blockOffsetX;
+        var cellW      = pagesView.cellW;
         var cellH      = pagesView.cellH;
-        var pageW      = pagesView.width;
+        var blockW     = pagesView.blockW;
         var pageH      = pagesView.height;
         var hot        = units.gu(4);   // ~icon radius
         var hot2       = hot * hot;
@@ -700,16 +781,17 @@ Item {
         for (var i = 0; i < m.count; ++i) {
             if (i === sourceIndex) continue;
             var r = m.get(i);
+            if (r.kind === "widget") continue;   // can't merge an app into a widget
             var cx, cy;
             if (mode === "free") {
                 var f = (r.xFrac > 0.001) ? r.xFrac : 0.5;
                 var g = (r.yFrac > 0.001) ? r.yFrac : 0.5;
-                cx = f * pageW;
+                cx = off + f * blockW;
                 cy = g * pageH;
             } else {
                 var col = (mode === "snap") ? (r.col >= 0 ? r.col : 0) : (i % pages.cols);
                 var row = (mode === "snap") ? (r.row >= 0 ? r.row : 0) : Math.floor(i / pages.cols);
-                cx = leftMargin + col * cellW + cellW / 2;
+                cx = off + leftMargin + col * cellW + cellW / 2;
                 cy = row * cellH + cellH / 2;
             }
             var dx = p.x - cx, dy = p.y - cy;
@@ -737,9 +819,12 @@ Item {
     // Authoritative source lookup — used by startDrag
     // ============================================================
 
-    /** A row's drag key: folderId for folders, appId for apps. */
+    /** A row's drag key: folderId for folders, widgetId for widgets, else appId. */
     function _rowKey(r) {
-        return (r && r.kind === "folder") ? r.folderId : (r ? r.appId : "");
+        if (!r) return "";
+        if (r.kind === "folder") return r.folderId;
+        if (r.kind === "widget") return r.widgetId;
+        return r.appId;
     }
 
     /**
@@ -768,14 +853,19 @@ Item {
     Item {
         id: floatingIcon
         visible: root.dragging
-        width: units.gu(6) * 1.15
-        height: 7.5 / 8 * width
+        // Widgets lift as a footprint-sized ghost; apps/folders as an icon.
+        width: root.sourceKind === "widget"
+               ? Math.min(units.gu(44), root.sourceWidgetW * root._ghostCellW)
+               : units.gu(6) * 1.15
+        height: root.sourceKind === "widget"
+                ? Math.min(units.gu(44), root.sourceWidgetH * root._ghostCellH)
+                : 7.5 / 8 * width
         opacity: 0.92
 
         // App: single icon.
         LomiriShape {
             anchors.fill: parent
-            visible: root.sourceKind !== "folder"
+            visible: root.sourceKind === "app"
             radius: "medium"
             borderSource: "undefined"
             sourceFillMode: LomiriShape.PreserveAspectCrop
@@ -784,6 +874,16 @@ Item {
                 sourceSize.width: floatingIcon.width
                 source: root.sourceIcon
             }
+        }
+
+        // Widget: translucent footprint-sized plate.
+        Rectangle {
+            anchors.fill: parent
+            visible: root.sourceKind === "widget"
+            radius: units.gu(2)
+            color: "#cc11162b"
+            border.color: "#88ffffff"
+            border.width: 1
         }
 
         // Folder: frosted plate with up to 4 mini icons (matches TileBody).

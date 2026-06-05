@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
 # @file refresh.sh
 # @description Dev-iteration deploy. Syncs the entire app/ tree to
-#   /opt/home-spike/ and SIGTERMs the running HomeSpike so the next BFB
-#   tap respawns with new code. Default mode touches nothing in /usr/share/.
+#   /opt/home-spike/ and restarts Lomiri so the new code loads.
 #
-#   With LOMIRI=1, ALSO replaces every Lomiri override file from
-#   app/lomiri-overrides/ and SIGKILLs Lomiri so the new shell code
-#   loads (you'll see the greeter — unlock to continue).
+#   The Lomiri shell overrides (app/lomiri-overrides/*.qml) live under
+#   /usr/share/lomiri and are only replaced when they actually change: the
+#   script AUTO-DETECTS when any override differs from what's on the device
+#   (md5 compare) and enables that path automatically — so you never have to
+#   remember LOMIRI=1. Force it on with LOMIRI=1 or off with LOMIRI=0. When the
+#   overrides are copied, Lomiri restarts to the greeter (unlock to continue).
 #
 # @status Stable.
-# @issues SIGKILLing Lomiri logs the user out to the greeter — that's the
+# @issues Restarting Lomiri logs the user out to the greeter — that's the
 #   cost of getting a clean QML reload. Lomiri caches QML aggressively,
 #   so a graceful restart doesn't reliably reload changed files.
 # @todo None
 #
-# Usage:  PIN=<phablet-sudo-pin>            ./refresh.sh
-#         PIN=<phablet-sudo-pin> LOMIRI=1   ./refresh.sh
+# Usage:  PIN=<phablet-sudo-pin>            ./refresh.sh   # auto-detects overrides
+#         PIN=<phablet-sudo-pin> LOMIRI=1   ./refresh.sh   # force override path
+#         PIN=<phablet-sudo-pin> LOMIRI=0   ./refresh.sh   # skip override path
 #         (legacy alias: DRAWER=1 also works)
 set -euo pipefail
 
@@ -38,6 +41,35 @@ fi
 
 "$ADB" devices | grep -q "device$" || { echo "ERROR: no device."; exit 1; }
 
+# ----------------------------------------------------------------------------
+# Auto-enable the Lomiri-override path when any app/lomiri-overrides/*.qml
+# differs from what's live on the device (md5 compare), so override changes
+# never get silently skipped. Explicit LOMIRI=1 forces it on; LOMIRI=0 off.
+# A missing/unreadable device file counts as "changed" (safe over-deploy).
+# ----------------------------------------------------------------------------
+if [ "$WITH_LOMIRI" != "1" ] && [ "${LOMIRI:-}" != "0" ]; then
+  _changed=""
+  while IFS='|' read -r _f _dev; do
+    [ -z "$_f" ] && continue
+    _local="$(md5sum "$REPO_ROOT/app/lomiri-overrides/$_f" 2>/dev/null | awk '{print $1}')"
+    # </dev/null: stop `adb shell` from swallowing the loop's heredoc stdin
+    # (otherwise it eats the remaining override lines and only the first is checked).
+    _remote="$("$ADB" shell "md5sum '$_dev' 2>/dev/null" </dev/null | awk '{print $1}' | tr -d '\r')"
+    [ "$_local" != "$_remote" ] && _changed="$_changed $_f"
+  done <<'OVERRIDES'
+Shell.qml|/usr/share/lomiri/Shell.qml
+Drawer.qml|/usr/share/lomiri/Launcher/Drawer.qml
+LauncherDelegate.qml|/usr/share/lomiri/Launcher/LauncherDelegate.qml
+Spread.qml|/usr/share/lomiri/Stage/Spread/Spread.qml
+Stage.qml|/usr/share/lomiri/Stage/Stage.qml
+OVERRIDES
+  if [ -n "$_changed" ]; then
+    WITH_LOMIRI=1
+    echo "NOTE: Lomiri override(s) changed:$_changed"
+    echo "      -> applying the shell-override path (Lomiri will restart to the greeter)."
+  fi
+fi
+
 # Push the whole app/ tree to a staging location, then sync into /opt/home-spike/
 "$ADB" shell "rm -rf /tmp/home-spike-staging" >/dev/null
 "$ADB" push "$REPO_ROOT/app" /tmp/home-spike-staging >/dev/null
@@ -57,18 +89,21 @@ fi
   if [ \"$WITH_LOMIRI\" = \"1\" ]; then
     # Backup-and-replace each Lomiri override. Backups are created once
     # (the test -f guard); subsequent runs just overwrite the live file.
-    test -f /usr/share/lomiri/Shell.qml.orig                || cp /usr/share/lomiri/Shell.qml                /usr/share/lomiri/Shell.qml.orig
-    test -f /usr/share/lomiri/Launcher/Drawer.qml.orig      || cp /usr/share/lomiri/Launcher/Drawer.qml      /usr/share/lomiri/Launcher/Drawer.qml.orig
-    test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig  || cp /usr/share/lomiri/Stage/Spread/Spread.qml  /usr/share/lomiri/Stage/Spread/Spread.qml.orig
-    test -f /usr/share/lomiri/Stage/Stage.qml.orig          || cp /usr/share/lomiri/Stage/Stage.qml          /usr/share/lomiri/Stage/Stage.qml.orig
+    test -f /usr/share/lomiri/Shell.qml.orig                       || cp /usr/share/lomiri/Shell.qml                       /usr/share/lomiri/Shell.qml.orig
+    test -f /usr/share/lomiri/Launcher/Drawer.qml.orig             || cp /usr/share/lomiri/Launcher/Drawer.qml             /usr/share/lomiri/Launcher/Drawer.qml.orig
+    test -f /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig   || cp /usr/share/lomiri/Launcher/LauncherDelegate.qml   /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig
+    test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig         || cp /usr/share/lomiri/Stage/Spread/Spread.qml         /usr/share/lomiri/Stage/Spread/Spread.qml.orig
+    test -f /usr/share/lomiri/Stage/Stage.qml.orig                 || cp /usr/share/lomiri/Stage/Stage.qml                 /usr/share/lomiri/Stage/Stage.qml.orig
 
-    cp /opt/home-spike/lomiri-overrides/Shell.qml   /usr/share/lomiri/Shell.qml
-    cp /opt/home-spike/lomiri-overrides/Drawer.qml  /usr/share/lomiri/Launcher/Drawer.qml
-    cp /opt/home-spike/lomiri-overrides/Spread.qml  /usr/share/lomiri/Stage/Spread/Spread.qml
-    cp /opt/home-spike/lomiri-overrides/Stage.qml   /usr/share/lomiri/Stage/Stage.qml
+    cp /opt/home-spike/lomiri-overrides/Shell.qml            /usr/share/lomiri/Shell.qml
+    cp /opt/home-spike/lomiri-overrides/Drawer.qml           /usr/share/lomiri/Launcher/Drawer.qml
+    cp /opt/home-spike/lomiri-overrides/LauncherDelegate.qml /usr/share/lomiri/Launcher/LauncherDelegate.qml
+    cp /opt/home-spike/lomiri-overrides/Spread.qml           /usr/share/lomiri/Stage/Spread/Spread.qml
+    cp /opt/home-spike/lomiri-overrides/Stage.qml            /usr/share/lomiri/Stage/Stage.qml
 
     chmod 644 /usr/share/lomiri/Shell.qml \
               /usr/share/lomiri/Launcher/Drawer.qml \
+              /usr/share/lomiri/Launcher/LauncherDelegate.qml \
               /usr/share/lomiri/Stage/Spread/Spread.qml \
               /usr/share/lomiri/Stage/Stage.qml
 

@@ -65,6 +65,11 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   cp /opt/home-spike/lomiri-overrides/Drawer.qml /usr/share/lomiri/Launcher/Drawer.qml
   chmod 644 /usr/share/lomiri/Launcher/Drawer.qml
 
+  # LauncherDelegate.qml: spin side-panel icons upright in landscape
+  test -f /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig || cp /usr/share/lomiri/Launcher/LauncherDelegate.qml /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig
+  cp /opt/home-spike/lomiri-overrides/LauncherDelegate.qml /usr/share/lomiri/Launcher/LauncherDelegate.qml
+  chmod 644 /usr/share/lomiri/Launcher/LauncherDelegate.qml
+
   # Spread.qml: home button in the right-swipe task switcher
   test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig || cp /usr/share/lomiri/Stage/Spread/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml.orig
   cp /opt/home-spike/lomiri-overrides/Spread.qml /usr/share/lomiri/Stage/Spread/Spread.qml
@@ -96,7 +101,7 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   chmod 644 /usr/share/lomiri-system-settings/qml-plugins/home-spike/PageComponent.qml
 
   echo --- overrides installed ---
-  for f in Shell.qml Launcher/Drawer.qml Stage/Spread/Spread.qml Stage/Stage.qml; do
+  for f in Shell.qml Launcher/Drawer.qml Launcher/LauncherDelegate.qml Stage/Spread/Spread.qml Stage/Stage.qml; do
     if [ -f /usr/share/lomiri/\$f.orig ]; then
       echo "  /usr/share/lomiri/\$f -- backup at .orig"
     fi

@@ -2,15 +2,15 @@
 
 All notable changes to HomeSpike are documented here.
 
-## [Unreleased]
+## [2.0.0] — 2026-06-05
 
 ### Added
+- **Home-screen widgets.** A reusable widget framework plus the first widgets: a **Clock** (large time over a weekday/date subtitle, or a compact time-only size) and a **Calendar** (small month-over-day, or a wide month grid with today highlighted). Add them from a new grid button in edit mode; each widget's **⚙** opens a sheet to toggle its **background** (plate ↔ transparent over the wallpaper), recolour **each section individually** (e.g. the clock's time, the calendar's month/day/weekday/today) with a full **HSV + opacity colour picker** (hex and R/G/B/A entry so colours can be matched exactly between sections), and choose a **size preset**. Time follows the system 12/24-hour setting (the same source as the top-bar clock) and all month/weekday names plus the first day of the week come from the device locale. Widgets drag and carry across pages like any tile. Widgets live in the **Snap to grid** and **Place anywhere** layouts; the picker shows a hint in Auto-fill.
 - **App folders.** Drop one app onto another to create a folder; a popup names it (or cancel). Open a folder to launch its apps; tap the name above the card to rename; long-press a member to rearrange it inside, or drag it past the card edge to pull it back onto the home grid; drop another app onto a folder to add it. A folder auto-dissolves to a normal icon when one member is left; the edit-mode "×" deletes the folder and removes its apps from HomeSpike (they stay installed). Folders are grid-only and carry across pages intact.
 - **Add / remove pages from edit mode.** A "+" button above the settings gear adds a page (cap 5) and jumps to it; a trash button removes the current page after a confirmation, removing the apps that were on it.
 - **Long-press empty space to toggle edit mode** (in addition to long-pressing a tile).
 - **Edit-mode jiggle.** Every icon rocks side-to-side in edit mode as a "you can rearrange now" cue, and snaps upright when you leave edit mode.
-- **Separate portrait / landscape layouts for Snap to grid and Place anywhere.** Each orientation remembers its own icon positions; membership and removals are shared. Rotating reflows the other orientation's default into the available space (in portrait reading order) so nothing is hidden.
-- **Adaptive column count.** The grid uses more columns when there's width to spare (landscape) so the wider screen holds more icons per row instead of clipping rows.
+- **The home stays portrait and doesn't rotate (iOS-style).** Turning the phone sideways re-orients the app icons, their labels, and widget content *in place* — they spin to stay upright — while the grid itself never moves or reflows. The home is pinned to portrait at the shell level while the launcher is in focus (the same mechanism Lomiri uses to portrait-lock official phones), so it stays put **even with auto-rotate on (Rotation Lock off)**; a focused app you open still rotates normally. The physical angle comes from the orientation sensor. The **drawer and side-panel launcher icons re-orient the same way**, and the drawer **relays out for landscape** so its items read left-to-right with the search field and view-mode button repositioned. With **Rotation Lock on, nothing re-orients** — the home, drawer, and launcher all stay portrait.
 - **System Settings integration.** New entry at *Settings → Personal → HomeSpike* with a master on/off toggle. Flipping it takes effect live — no restart, no logout. When off, the phone reverts to stock Lomiri behavior (BFB opens the drawer, spread home button hides, "Add to HomeSpike" drawer menu hides, launcher panel stops auto-collapsing, HomeSpike's UI is invisible while the wallpaper stays).
 - **gsettings schema** `com.lomiri.HomeSpike` (single `enabled` boolean key, default `true`). Single source of truth for the toggle. Survives HomeSpike crashes since the override files read it directly.
 - **[`docs/ClickInstaller.md`](docs/ClickInstaller.md)** — scoping doc for a future Click package that would ship HomeSpike through OpenStore (one-tap install, no `PIN=… ./install.sh` dance).
@@ -34,7 +34,7 @@ All notable changes to HomeSpike are documented here.
 - **Drag between the grid and the dock froze and clipped.** Removing the dragged tile from its model mid-drag destroyed the delegate that owned the touch, stranding the gesture until the next tap. Cross-container moves now commit at release, so the grab survives the whole drag.
 - **Drag between pages had the same freeze.** Edge-flip now only scrolls (wrapping from the last page back to the first), the move commits at release, and every page stays instantiated so the dragged tile isn't destroyed when its origin page scrolls off-screen.
 - **Snap-to-grid vertical overlap.** Adjacent rows could overlap near the bottom; the row pitch now divides the available height evenly, with no position clamping for grid modes.
-- **Landscape was broken** — icons vanished, not all pages were reachable, and the page dots pointed at the wrong page. The pager now re-aligns on rotation, icons reflow across the extra columns instead of clipping, and Snap/Place-anywhere keep separate per-orientation layouts.
+- **Landscape was broken** — icons vanished, overlapped, not all pages were reachable, and the page dots pointed at the wrong page. The home is now pinned to portrait and the icons re-orient in place instead, so nothing reflows, jumps, or overlaps on rotation.
 - **Moving a folder across pages dropped all but its first app.** The cross-page carry now copies the whole folder row (identity + members) instead of rebuilding it as a single app tile.
 - **Dragging a folder showed its first app's icon.** The floating drag visual now mirrors the folder's 2×2 preview.
 - **`install.sh` failed with `f: unbound variable`.** The `$f` in the override-listing loop was being expanded by the outer shell before the script reached the device; it's escaped now.
@@ -82,5 +82,5 @@ First release.
 
 ---
 
-[Unreleased]: https://github.com/TeamIDE/HomeSpikev1/compare/v1.0.1...HEAD
-[1.0]: https://github.com/TeamIDE/HomeSpikev1/releases/tag/v1.0.0
+[2.0.0]: https://github.com/fmylaugh/HomeSpike-Next/releases/tag/v2.0.0
+[1.0]: https://github.com/fmylaugh/HomeSpike-Next/releases/tag/v1.0.0

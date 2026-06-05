@@ -78,6 +78,20 @@ FocusScope {
         schema.id: "com.lomiri.HomeSpike"
     }
 
+    // HomeSpike: the home is portrait-locked, so the drawer renders portrait
+    // while the phone is physically landscape. Read the device angle from the
+    // same sensor the home screen/dock use, so the drawer icons spin upright and
+    // the search box can hide in landscape. Loader-isolated (degrades to 0 if
+    // the QtSensors plugin is missing).
+    property int deviceAngle: _orientationProbe.item ? _orientationProbe.item.angle : 0
+    readonly property bool landscape: deviceAngle === 90 || deviceAngle === 270
+    Loader {
+        id: _orientationProbe
+        source: "file:///opt/home-spike/sensors/OrientationProbe.qml"
+        active: hsSettings.enabled
+        asynchronous: true
+    }
+
     anchors {
         onRightMarginChanged: refocusInputAfterUserLetsGo()
     }
@@ -347,10 +361,32 @@ FocusScope {
             }
             property var azGroups: []
 
+            // HomeSpike: in landscape, lay the drawer content out at the SWAPPED
+            // (landscape) dimensions and rotate it to fill the area, so it becomes
+            // a true landscape layout — items flow left-to-right and the headers/
+            // button land in landscape positions — instead of a turned portrait
+            // one. Portrait is unchanged (no swap, rotation 0). Qt transforms
+            // touch through the rotation, so scrolling still works the natural way.
+            Item {
+                id: contentRotor
+                anchors.centerIn: parent
+                width:  root.landscape ? parent.height : parent.width
+                height: root.landscape ? parent.width  : parent.height
+                // Snap (no rotation animation): the dims swap instantly with the
+                // angle, so animating just the rotation would briefly overflow.
+                rotation: root.deviceAngle
+
             Item {
                 id: searchFieldContainer
-                height: units.gu(4)
-                anchors { left: parent.left; top: parent.top; right: parent.right; margins: units.gu(1) }
+                // Hidden in landscape (search/keyboard are portrait-only this
+                // round); collapsing the height lets the grid reflow up.
+                visible: !root.landscape
+                height: root.landscape ? 0 : units.gu(4)
+                anchors {
+                    left: parent.left; top: parent.top; right: parent.right
+                    leftMargin: units.gu(1); rightMargin: units.gu(1)
+                    topMargin: root.landscape ? 0 : units.gu(1)
+                }
 
                 TextField {
                     id: searchField
@@ -491,7 +527,10 @@ FocusScope {
                         Repeater {
                             model: modelData.apps
                             delegate: AbstractButton {
-                                width: sectionedList.width / 4
+                                // Column count scales with width (like DrawerGridView),
+                                // so A-Z/Categories get more columns in the wide
+                                // landscape layout instead of being stuck at 4.
+                                width: sectionedList.width / Math.max(4, Math.floor(sectionedList.width / units.gu(11)))
                                 height: units.gu(11)
                                 objectName: "drawerSectItem_" + modelData.appId
                                 onClicked: root.applicationSelected(modelData.appId)
@@ -536,6 +575,7 @@ FocusScope {
                     }
                 }
             }
+            }   // contentRotor
         }
 
         Component {
@@ -665,6 +705,9 @@ FocusScope {
         id: homeSpikeMenu
         visible: false
         z: 1000
+        // Keep the long-press menu upright in landscape (it's a root-level
+        // sibling, so it isn't covered by the content's block rotation).
+        rotation: root.deviceAngle
         radius: units.gu(0.5)
         color: "#1d2333"
         border.color: "#3a4262"
