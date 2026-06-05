@@ -16,30 +16,73 @@ HomeSpike runs *inside* the Lomiri shell as the background layer, so it's there 
 <table>
   <tr>
     <td align="center" width="33%">
-      <a href="pictures/01-home-grid-with-launcher.png"><img src="pictures/01-home-grid-with-launcher.png" width="240" alt="Home grid with the Lomiri launcher panel on the left"></a><br>
+      <a href="pictures/Home-Grid.png"><img src="pictures/Home-Grid.png" width="240" alt="Home grid with clock and calendar widgets"></a><br>
       <sub><b>Home grid</b></sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/02-home-with-dock.png"><img src="pictures/02-home-with-dock.png" width="240" alt="Home grid with the bottom dock enabled"></a><br>
-      <sub><b>Home + dock</b></sub>
+      <a href="pictures/Home-Grid-Panel.png"><img src="pictures/Home-Grid-Panel.png" width="240" alt="Home grid with the Lomiri launcher panel on the left"></a><br>
+      <sub><b>Home grid + launcher panel</b></sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/03-edit-mode.png"><img src="pictures/03-edit-mode.png" width="240" alt="Edit mode with remove badges and the settings gear"></a><br>
-      <sub><b>Edit mode</b> — long-press a tile or empty space</sub>
+      <a href="pictures/Edit-Mode.png"><img src="pictures/Edit-Mode.png" width="240" alt="Edit mode showing widgets, remove badges, and the add buttons"></a><br>
+      <sub><b>Edit mode</b> — widgets + controls</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="33%">
-      <a href="pictures/04-settings-layout-modes.png"><img src="pictures/04-settings-layout-modes.png" width="240" alt="Settings overlay with the three placement modes"></a><br>
-      <sub><b>Settings</b> — dock + placement modes</sub>
+      <a href="pictures/Widget-Settings.png"><img src="pictures/Widget-Settings.png" width="240" alt="Widget settings: background toggle, per-section colours, size presets"></a><br>
+      <sub><b>Widget settings</b> — colours + size</sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/05-spread-home-button.png"><img src="pictures/05-spread-home-button.png" width="240" alt="Right-edge spread with a home button at the bottom"></a><br>
-      <sub><b>Spread home button</b></sub>
+      <a href="pictures/HomeSpike-Settings.png"><img src="pictures/HomeSpike-Settings.png" width="240" alt="HomeSpike settings: dock, labels, placement modes"></a><br>
+      <sub><b>Settings</b> — dock, labels, layout</sub>
+    </td>
+    <td align="center" width="33%"></td>
+  </tr>
+</table>
+
+**App drawer** — Standard, A-Z, and Categories view modes:
+
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <a href="pictures/Drawer-Portrait-Mode1.png"><img src="pictures/Drawer-Portrait-Mode1.png" width="240" alt="App drawer in the Standard grid"></a><br>
+      <sub><b>Standard</b></sub>
     </td>
     <td align="center" width="33%">
-      <a href="pictures/06-drawer-add-to-homespike.png"><img src="pictures/06-drawer-add-to-homespike.png" width="240" alt="Lomiri drawer with the Add to HomeSpike context menu"></a><br>
-      <sub><b>Add to HomeSpike</b> — from the drawer</sub>
+      <a href="pictures/Drawer-Portrait-Mode2.png"><img src="pictures/Drawer-Portrait-Mode2.png" width="240" alt="App drawer with A-Z sections"></a><br>
+      <sub><b>A-Z</b></sub>
+    </td>
+    <td align="center" width="33%">
+      <a href="pictures/Drawer-Portrait-Mode3.png"><img src="pictures/Drawer-Portrait-Mode3.png" width="240" alt="App drawer with Categories sections"></a><br>
+      <sub><b>Categories</b></sub>
+    </td>
+  </tr>
+</table>
+
+### Landscape
+
+Turn the phone and everything re-orients in place — the home grid stays put while icons, labels, and widgets spin upright, and the drawer relays out for landscape:
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="pictures/Home-Grid-Landscape.png"><img src="pictures/Home-Grid-Landscape.png" width="440" alt="Home grid in landscape with widgets upright"></a><br>
+      <sub><b>Home grid</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="pictures/Drawer-Landscape-Mode1.png"><img src="pictures/Drawer-Landscape-Mode1.png" width="440" alt="App drawer in landscape, Standard"></a><br>
+      <sub><b>Drawer — Standard</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <a href="pictures/Drawer-Landscape-Mode2.png"><img src="pictures/Drawer-Landscape-Mode2.png" width="440" alt="App drawer in landscape, A-Z"></a><br>
+      <sub><b>Drawer — A-Z</b></sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="pictures/Drawer-Landscape-Mode3.png"><img src="pictures/Drawer-Landscape-Mode3.png" width="440" alt="App drawer in landscape, Categories"></a><br>
+      <sub><b>Drawer — Categories</b></sub>
     </td>
   </tr>
 </table>
