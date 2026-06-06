@@ -25,6 +25,8 @@ Item {
     Component { id: calendarComponent; CalendarWidget {} }
     Component { id: weatherComponent;  WeatherWidget {} }
     Component { id: sysInfoComponent;  SysInfoWidget {} }
+    Component { id: photoComponent;    PhotoWidget {} }
+    Component { id: sysMonComponent;   SysMonitorWidget {} }
 
     /** Default plate colour (translucent navy) — the universal "background"
      *  colour slot every widget has. */
@@ -110,6 +112,49 @@ Item {
                 { key: "border",  label: "Border",   def: "#3a4262" }
             ],
             component: sysInfoComponent
+        },
+        {
+            type: "photo", title: "Photo",
+            // Two clock-style sizes plus a tall portrait one.
+            variants: [ { key: "small", w: 2, h: 2 }, { key: "wide", w: 4, h: 2 },
+                        { key: "tall", w: 2, h: 4 } ],
+            // A photo fills the tile, so the background plate is never visible:
+            // default it off and hide the toggle (see hidesBackground()).
+            defaults: { background: false },
+            hideBackground: true,
+            colorSlots: [
+                { key: "border", label: "Border colour", def: "#ffffff" }
+            ],
+            options: [
+                { key: "image", kind: "image", label: "Photo" },
+                { key: "borderWidth", kind: "segmented", label: "Border size", def: 0.5,
+                  choices: [ { v: 0, t: "None" }, { v: 0.5, t: "Thin" }, { v: 1, t: "Med" }, { v: 2, t: "Thick" } ] },
+                { key: "borderRadius", kind: "segmented", label: "Corners", def: 1.5,
+                  choices: [ { v: 0, t: "Square" }, { v: 1, t: "Soft" }, { v: 2.5, t: "Round" }, { v: 5, t: "Pill" } ] }
+            ],
+            component: photoComponent
+        },
+        {
+            type: "sysmon", title: "System Monitor",
+            // Vertical, 2- or 4-wide.
+            variants: [ { key: "narrow", w: 2, h: 4 }, { key: "wide", w: 4, h: 4 } ],
+            defaults: { background: true },
+            colorSlots: [
+                { key: "header", label: "Headers", def: "#e9a23b" },
+                { key: "bar",    label: "Bars",    def: "#3d5af1" },
+                { key: "label",  label: "Labels",  def: "#9fa9c0" },
+                { key: "value",  label: "Values",  def: "#ffffff" }
+            ],
+            options: [
+                { key: "sections", kind: "toggles", label: "Sections",
+                  def: ["cpu", "memory", "network"],
+                  items: [ { k: "system", t: "System" }, { k: "cpu", t: "CPU" },
+                           { k: "memory", t: "Memory" }, { k: "network", t: "Network" },
+                           { k: "battery", t: "Battery" }, { k: "temp", t: "Temperature" } ] },
+                { key: "refresh", kind: "segmented", label: "Refresh", def: 2,
+                  choices: [ { v: 1, t: "1s" }, { v: 2, t: "2s" }, { v: 5, t: "5s" } ] }
+            ],
+            component: sysMonComponent
         }
     ]
 
@@ -142,6 +187,13 @@ Item {
     function optionsFor(type) {
         var t = typeDef(type);
         return (t && t.options) ? t.options : [];
+    }
+
+    /** Whether to hide the background plate toggle/colour for a type (e.g. the
+     *  photo widget, where the picture covers any plate). */
+    function hidesBackground(type) {
+        var t = typeDef(type);
+        return !!(t && t.hideBackground);
     }
 
     function componentFor(type) {

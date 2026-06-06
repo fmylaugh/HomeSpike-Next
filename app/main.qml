@@ -123,6 +123,7 @@ Item {
     // feed, otherwise the `xxx: xxx` bindings below self-reference (loop).
     WeatherService { id: weatherSvc }
     SysInfoService { id: sysInfoSvc }
+    SysMonitorService { id: sysMonSvc }
 
     PageModelRegistry {
         id: pages
@@ -420,6 +421,7 @@ Item {
                                 catalog: widgetCatalog
                                 weatherService: weatherSvc
                                 sysInfoService: sysInfoSvc
+                                sysMonitorService: sysMonSvc
                                 contentAngle: root.deviceAngle
                                 onRemoveRequested: (id) => pages.removeWidget(id)
                                 onSettingsRequested: (id) => widgetSettingsOverlay.open(id)
@@ -672,6 +674,14 @@ Item {
         pages: pages
         catalog: widgetCatalog
         weatherService: weatherSvc
+        photoPicker: photoPickerOverlay
+        leftReserve: root.leftReserve
+    }
+
+    // Photo browser opened from a Photo widget's settings (id differs from the
+    // `photoPicker` property it feeds, to avoid a self-referencing binding).
+    PhotoPickerOverlay {
+        id: photoPickerOverlay
         leftReserve: root.leftReserve
     }
 }

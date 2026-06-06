@@ -113,6 +113,16 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   mount -o remount,ro /
 '"
 
+# User-level systemd drop-in so HomeSpike's widgets can read /proc + /etc via
+# XMLHttpRequest without flooding the journal with Qt's per-read deprecation
+# warning (the System Monitor polls continuously). No root; the reboot below
+# applies it.
+"$ADB" shell '
+  d=$HOME/.config/systemd/user/lomiri-full-greeter.service.d
+  mkdir -p "$d"
+  printf "[Service]\nEnvironment=QML_XHR_ALLOW_FILE_READ=1\n" > "$d/homespike-xhr.conf"
+' >/dev/null 2>&1 || true
+
 echo "[4/4] Rebooting device. Wait ~30s, unlock, HomeSpike should already be there."
 "$ADB" shell "echo '$PIN' | sudo -S reboot" 2>&1 | grep -v '^\[sudo\]' || true
 echo "done. installed."

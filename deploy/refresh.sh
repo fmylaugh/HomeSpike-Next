@@ -70,6 +70,18 @@ OVERRIDES
   fi
 fi
 
+# Let HomeSpike's widgets read /proc + /etc via XMLHttpRequest WITHOUT Qt's
+# per-read deprecation warning flooding the journal (the System Monitor polls
+# these continuously). lomiri runs as the user service lomiri-full-greeter; a
+# user-level systemd drop-in sets the env for it. No root; survives reboots/OTA.
+# daemon-reload here so the (root) lomiri restart below picks it up.
+"$ADB" shell '
+  d=$HOME/.config/systemd/user/lomiri-full-greeter.service.d
+  mkdir -p "$d"
+  printf "[Service]\nEnvironment=QML_XHR_ALLOW_FILE_READ=1\n" > "$d/homespike-xhr.conf"
+  systemctl --user daemon-reload 2>/dev/null || true
+' >/dev/null 2>&1 || true
+
 # Push the whole app/ tree to a staging location, then sync into /opt/home-spike/
 "$ADB" shell "rm -rf /tmp/home-spike-staging" >/dev/null
 "$ADB" push "$REPO_ROOT/app" /tmp/home-spike-staging >/dev/null

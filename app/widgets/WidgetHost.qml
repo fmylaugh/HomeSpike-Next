@@ -44,6 +44,9 @@ Item {
     /** Shared system-info source — injected into widgets that expose a
      *  `sysInfo` property (the system-info widget); ignored by the rest. */
     property var sysInfoService: null
+    /** Shared real-time monitor source — injected into widgets that expose a
+     *  `monitor` property (the system-monitor widget); ignored by the rest. */
+    property var sysMonitorService: null
 
     /** Device orientation angle (deg). The widget's box stays put in the
      *  (portrait) grid; its CONTENT rotates by this so it stays upright as the
@@ -160,6 +163,7 @@ Item {
                     // Inject shared data layers only into widgets that want them.
                     if (item.hasOwnProperty("service")) item.service = host.weatherService;
                     if (item.hasOwnProperty("sysInfo")) item.sysInfo = host.sysInfoService;
+                    if (item.hasOwnProperty("monitor")) item.monitor = host.sysMonitorService;
                 }
             }
 

@@ -25,6 +25,8 @@ Rectangle {
     property var catalog: null
     /** Injected WeatherService — geocodes the city option. */
     property var weatherService: null
+    /** Injected PhotoPickerOverlay — opened by the "image" option. */
+    property var photoPicker: null
 
     property real leftReserve: 0
 
@@ -51,6 +53,8 @@ Rectangle {
                                   ? catalog.colorSlotsFor(widgetType, widgetVariant) : []
     readonly property var _options: (catalog && widgetType)
                                     ? catalog.optionsFor(widgetType) : []
+    readonly property bool _hideBg: (catalog && widgetType)
+                                    ? catalog.hidesBackground(widgetType) : false
 
     anchors.fill: parent
     z: 910
@@ -108,6 +112,20 @@ Rectangle {
         if (pages) pages.updateWidgetSettings(widgetId, o);
         var ns = {}; for (var k in rawSettings) ns[k] = rawSettings[k];
         ns[key] = val; rawSettings = ns;
+    }
+
+    // ---- "toggles" option (a set of on/off keys stored as an array) ----
+    function _toggleArr(opt) {
+        var v = _optValue(opt.key);
+        return Array.isArray(v) ? v.slice() : (opt.def ? opt.def.slice() : []);
+    }
+    function _toggleOn(opt, k) { return _toggleArr(opt).indexOf(k) >= 0; }
+    function _setToggle(opt, k, on) {
+        var arr = _toggleArr(opt);
+        var i = arr.indexOf(k);
+        if (on && i < 0) arr.push(k);
+        else if (!on && i >= 0) arr.splice(i, 1);
+        _setOpt(opt.key, arr);
     }
 
     /** Geocode a typed city → persist {city,lat,lon}; report status. */
@@ -191,8 +209,10 @@ Rectangle {
 
                     Label { text: "Widget settings"; color: "white"; font.bold: true; fontSize: "large" }
 
-                    // Background on/off.
+                    // Background on/off. Hidden for widgets that cover the plate
+                    // (e.g. the photo widget).
                     Row {
+                        visible: !root._hideBg
                         width: parent.width
                         spacing: units.gu(2)
                         Column {
@@ -265,6 +285,39 @@ Rectangle {
                                     }
                                 }
 
+                                // ----- image (photo chooser) -----
+                                Row {
+                                    visible: opt.kind === "image"
+                                    width: parent.width
+                                    spacing: units.gu(1)
+                                    Rectangle {
+                                        width: units.gu(5); height: units.gu(5)
+                                        radius: units.gu(0.5)
+                                        color: "#1d2540"; clip: true
+                                        Image {
+                                            anchors.fill: parent
+                                            visible: root._optValue(optEntry.opt.key) !== ""
+                                            source: root._optValue(optEntry.opt.key)
+                                            fillMode: Image.PreserveAspectCrop
+                                            sourceSize.width: units.gu(10)
+                                            sourceSize.height: units.gu(10)
+                                            asynchronous: true
+                                        }
+                                        Label {
+                                            anchors.centerIn: parent
+                                            visible: root._optValue(optEntry.opt.key) === ""
+                                            text: "—"; color: "#9fa9c0"
+                                        }
+                                    }
+                                    Button {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: "Choose…"
+                                        color: "#3d5af1"
+                                        onClicked: if (root.photoPicker)
+                                                       root.photoPicker.open(function (url) { root._setOpt(optEntry.opt.key, url); })
+                                    }
+                                }
+
                                 // ----- segmented (e.g. units) -----
                                 Row {
                                     visible: opt.kind === "segmented"
@@ -288,6 +341,36 @@ Rectangle {
                                         }
                                     }
                                 }
+
+                                // ----- toggles (on/off list stored as an array) -----
+                                Column {
+                                    visible: opt.kind === "toggles"
+                                    width: parent.width
+                                    spacing: units.gu(0.3)
+                                    Repeater {
+                                        model: optEntry.opt.items ? optEntry.opt.items : []
+                                        delegate: Row {
+                                            width: parent.width
+                                            spacing: units.gu(1)
+                                            Label {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                width: parent.width - tSwitch.width - units.gu(1)
+                                                text: modelData.t
+                                                color: "white"
+                                            }
+                                            Switch {
+                                                id: tSwitch
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                checked: root._toggleOn(optEntry.opt, modelData.k)
+                                                onCheckedChanged: {
+                                                    var on = root._toggleOn(optEntry.opt, modelData.k);
+                                                    if (checked === on) return;
+                                                    root._setToggle(optEntry.opt, modelData.k, checked);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -302,7 +385,7 @@ Rectangle {
 
                         // Background colour row.
                         WidgetColorRow {
-                            visible: root.background
+                            visible: root.background && !root._hideBg
                             width: parent.width
                             label: "Background"
                             swatch: root.colors["background"] !== undefined ? root.colors["background"] : "#cc11162b"

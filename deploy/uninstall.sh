@@ -82,5 +82,12 @@ fi
   mount -o remount,ro /
 '"
 
+# Remove the user systemd drop-in (the XHR-allow env override).
+"$ADB" shell '
+  rm -f "$HOME/.config/systemd/user/lomiri-full-greeter.service.d/homespike-xhr.conf"
+  rmdir "$HOME/.config/systemd/user/lomiri-full-greeter.service.d" 2>/dev/null || true
+  systemctl --user daemon-reload 2>/dev/null || true
+' >/dev/null 2>&1 || true
+
 "$ADB" shell "echo '$PIN' | sudo -S reboot" 2>&1 | grep -v '^\[sudo\]' || true
 echo "done. reverted."

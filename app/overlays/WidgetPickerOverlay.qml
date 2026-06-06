@@ -45,19 +45,25 @@ Rectangle {
         anchors.centerIn: parent
         anchors.horizontalCenterOffset: root.leftReserve / 2
         width: Math.min((parent.width - root.leftReserve) * 0.9, units.gu(60))
-        height: col.height + units.gu(4)
+        // Cap to the viewport and let the content scroll when it's taller.
+        height: Math.min(parent.height * 0.9, col.implicitHeight + units.gu(4))
         radius: units.gu(2)
         color: "#262d4d"
 
         MouseArea { anchors.fill: parent }   // swallow taps so they don't close
 
-        Column {
+        Flickable {
+            id: fl
+            anchors.fill: parent
+            anchors.margins: units.gu(2)
+            contentHeight: col.implicitHeight
+            clip: true
+            interactive: contentHeight > height
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
             id: col
-            anchors {
-                left: parent.left; right: parent.right
-                verticalCenter: parent.verticalCenter
-                leftMargin: units.gu(2); rightMargin: units.gu(2)
-            }
+            width: fl.width
             spacing: units.gu(2)
 
             Label {
@@ -150,6 +156,7 @@ Rectangle {
             Row {
                 anchors.right: parent.right
                 Button { text: "Close"; color: "#3d5af1"; onClicked: root.visible = false }
+            }
             }
         }
     }
