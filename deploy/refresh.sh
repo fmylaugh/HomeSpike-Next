@@ -62,6 +62,7 @@ Drawer.qml|/usr/share/lomiri/Launcher/Drawer.qml
 LauncherDelegate.qml|/usr/share/lomiri/Launcher/LauncherDelegate.qml
 Spread.qml|/usr/share/lomiri/Stage/Spread/Spread.qml
 Stage.qml|/usr/share/lomiri/Stage/Stage.qml
+PanelMenu.qml|/usr/share/lomiri/Panel/PanelMenu.qml
 OVERRIDES
   if [ -n "$_changed" ]; then
     WITH_LOMIRI=1
@@ -106,18 +107,21 @@ fi
     test -f /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig   || cp /usr/share/lomiri/Launcher/LauncherDelegate.qml   /usr/share/lomiri/Launcher/LauncherDelegate.qml.orig
     test -f /usr/share/lomiri/Stage/Spread/Spread.qml.orig         || cp /usr/share/lomiri/Stage/Spread/Spread.qml         /usr/share/lomiri/Stage/Spread/Spread.qml.orig
     test -f /usr/share/lomiri/Stage/Stage.qml.orig                 || cp /usr/share/lomiri/Stage/Stage.qml                 /usr/share/lomiri/Stage/Stage.qml.orig
+    test -f /usr/share/lomiri/Panel/PanelMenu.qml.orig             || cp /usr/share/lomiri/Panel/PanelMenu.qml             /usr/share/lomiri/Panel/PanelMenu.qml.orig
 
     cp /opt/home-spike/lomiri-overrides/Shell.qml            /usr/share/lomiri/Shell.qml
     cp /opt/home-spike/lomiri-overrides/Drawer.qml           /usr/share/lomiri/Launcher/Drawer.qml
     cp /opt/home-spike/lomiri-overrides/LauncherDelegate.qml /usr/share/lomiri/Launcher/LauncherDelegate.qml
     cp /opt/home-spike/lomiri-overrides/Spread.qml           /usr/share/lomiri/Stage/Spread/Spread.qml
     cp /opt/home-spike/lomiri-overrides/Stage.qml            /usr/share/lomiri/Stage/Stage.qml
+    cp /opt/home-spike/lomiri-overrides/PanelMenu.qml        /usr/share/lomiri/Panel/PanelMenu.qml
 
     chmod 644 /usr/share/lomiri/Shell.qml \
               /usr/share/lomiri/Launcher/Drawer.qml \
               /usr/share/lomiri/Launcher/LauncherDelegate.qml \
               /usr/share/lomiri/Stage/Spread/Spread.qml \
-              /usr/share/lomiri/Stage/Stage.qml
+              /usr/share/lomiri/Stage/Stage.qml \
+              /usr/share/lomiri/Panel/PanelMenu.qml
 
     # Sync the gsettings schema + system-settings plugin too. These rarely
     # change, but the LOMIRI=1 path is the only one that touches /usr, so

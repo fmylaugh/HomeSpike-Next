@@ -44,7 +44,8 @@ fi
       /usr/share/lomiri/Launcher/Drawer.qml \
       /usr/share/lomiri/Launcher/LauncherDelegate.qml \
       /usr/share/lomiri/Stage/Spread/Spread.qml \
-      /usr/share/lomiri/Stage/Stage.qml; do
+      /usr/share/lomiri/Stage/Stage.qml \
+      /usr/share/lomiri/Panel/PanelMenu.qml; do
     if test -f \${target}.orig; then
       mv \${target}.orig \${target}
       echo restored \${target}

@@ -80,6 +80,11 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   cp /opt/home-spike/lomiri-overrides/Stage.qml /usr/share/lomiri/Stage/Stage.qml
   chmod 644 /usr/share/lomiri/Stage/Stage.qml
 
+  # PanelMenu.qml: optional rounded-corner inset for the top-bar indicator row
+  test -f /usr/share/lomiri/Panel/PanelMenu.qml.orig || cp /usr/share/lomiri/Panel/PanelMenu.qml /usr/share/lomiri/Panel/PanelMenu.qml.orig
+  cp /opt/home-spike/lomiri-overrides/PanelMenu.qml /usr/share/lomiri/Panel/PanelMenu.qml
+  chmod 644 /usr/share/lomiri/Panel/PanelMenu.qml
+
   # ----- HomeSpike config dir (holds home-spike.conf). The Drawer→HomeSpike
   #       "Add to HomeSpike" IPC is now a reactive gsettings key, not a file. -----
   mkdir -p /home/phablet/.config/home-spike
@@ -101,7 +106,7 @@ echo "[3/4] Remount rw, install app tree, replace Lomiri overrides..."
   chmod 644 /usr/share/lomiri-system-settings/qml-plugins/home-spike/PageComponent.qml
 
   echo --- overrides installed ---
-  for f in Shell.qml Launcher/Drawer.qml Launcher/LauncherDelegate.qml Stage/Spread/Spread.qml Stage/Stage.qml; do
+  for f in Shell.qml Launcher/Drawer.qml Launcher/LauncherDelegate.qml Stage/Spread/Spread.qml Stage/Stage.qml Panel/PanelMenu.qml; do
     if [ -f /usr/share/lomiri/\$f.orig ]; then
       echo "  /usr/share/lomiri/\$f -- backup at .orig"
     fi

@@ -344,6 +344,11 @@ StyledItem {
         schema.id: "com.lomiri.HomeSpike"
     }
     readonly property bool hsEnabled: hsSettings.enabled
+    // HomeSpike: optional inset for the top-bar indicator row so a rounded
+    // screen corner doesn't crop the rightmost icon (the clock). 0 when off
+    // ⇒ pixel-identical to stock. Independent of hsEnabled — it's a display
+    // fix that applies whether the home screen is on or not.
+    readonly property real hsIndicatorInset: hsSettings.indicatorInset ? units.gu(2.5) : 0
 
     PanelState {
         id: panelState
@@ -629,6 +634,11 @@ StyledItem {
             applicationMenuContentX: launcher.lockedVisible ? launcher.panelWidth : 0
 
             indicators {
+                // HomeSpike: inset ONLY the indicator icon row from the right
+                // edge so a rounded screen corner doesn't crop the clock. The
+                // pull-down menu and drag handle stay full-width (no gap) — see
+                // PanelMenu.qml's barRightInset. 0 when off ⇒ identical to stock.
+                barRightInset: shell.hsIndicatorInset
                 hides: [launcher]
                 available: tutorial.panelEnabled
                         && ((!greeter || !greeter.locked) || AccountsService.enableIndicatorsWhileLocked)

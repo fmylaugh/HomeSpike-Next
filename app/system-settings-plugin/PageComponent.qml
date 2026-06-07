@@ -1,8 +1,9 @@
 /**
  * @file PageComponent
  * @description Lomiri System Settings page for HomeSpike. Lives at
- *   Settings → Personal → HomeSpike. Currently exposes a single toggle
- *   (`enabled`) bound to the com.lomiri.HomeSpike gsettings schema.
+ *   Settings → Personal → HomeSpike. Exposes the `enabled` master toggle
+ *   and the `indicator-inset` top-bar fix, both bound to the
+ *   com.lomiri.HomeSpike gsettings schema.
  *
  *   The four lomiri-overrides files (Shell.qml, Stage.qml, Spread
  *   visibility, Drawer.qml) plus HomeSpike's own main.qml all bind to
@@ -61,11 +62,6 @@ ItemPage {
                 id: enableRow
                 objectName: "enableHomeSpike"
                 text: i18n.tr("HomeSpike home screen")
-                layout.subtitle.text: i18n.tr(
-                    "Use HomeSpike as your home surface. When off, the phone "
-                  + "reverts to stock Lomiri behavior — the Ubuntu logo opens "
-                  + "the app drawer instead of HomeSpike."
-                )
 
                 Switch {
                     id: enableSwitch
@@ -77,18 +73,71 @@ ItemPage {
                 }
             }
 
+            // Full explanation of the toggle. It lives here (not in the row's
+            // subtitle, which elides to a single line) so it wraps and shows in
+            // full — the user can see exactly what turning it off does.
+            Label {
+                anchors {
+                    left: parent.left; right: parent.right
+                    leftMargin: units.gu(2); rightMargin: units.gu(2)
+                }
+                wrapMode: Text.WordWrap
+                fontSize: "small"
+                color: theme.palette.normal.backgroundSecondaryText
+                text: i18n.tr(
+                    "Use HomeSpike as your home surface — unlock straight to your "
+                  + "widget-and-icon home screen. When off, the phone reverts to "
+                  + "stock Lomiri behaviour: the Ubuntu logo opens the app drawer "
+                  + "instead of HomeSpike, the spread loses its home button, the "
+                  + "drawer's “Add to HomeSpike” menu is hidden, and HomeSpike's "
+                  + "interface stays out of the way."
+                )
+            }
+
+            SettingsItemTitle {
+                text: i18n.tr("Display")
+            }
+
+            SettingsListItems.Standard {
+                id: indicatorInsetRow
+                objectName: "indicatorInset"
+                text: i18n.tr("Round corners fix")
+
+                Switch {
+                    id: indicatorInsetSwitch
+                    checked: hsSettings.indicatorInset
+                    onTriggered: hsSettings.indicatorInset = checked
+                }
+            }
+
+            Label {
+                anchors {
+                    left: parent.left; right: parent.right
+                    leftMargin: units.gu(2); rightMargin: units.gu(2)
+                }
+                wrapMode: Text.WordWrap
+                fontSize: "small"
+                color: theme.palette.normal.backgroundSecondaryText
+                text: i18n.tr(
+                    "Pushes the status icons (clock, battery, sound…) in from "
+                  + "the right edge so a rounded screen corner doesn't crop them. "
+                  + "The pull-down indicator menus keep working. Applies whether "
+                  + "HomeSpike is on or off."
+                )
+            }
+
             SettingsItemTitle {
                 text: i18n.tr("About")
             }
 
             SettingsListItems.Standard {
                 text: i18n.tr("Version")
-                layout.subtitle.text: "1.0"
+                layout.subtitle.text: "2.0.0"
             }
 
             SettingsListItems.Standard {
                 text: i18n.tr("Source")
-                layout.subtitle.text: "github.com/TeamIDE/HomeSpikev1"
+                layout.subtitle.text: "github.com/fmylaugh/HomeSpike-Next"
             }
         }
     }

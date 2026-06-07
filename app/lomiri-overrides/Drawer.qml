@@ -421,12 +421,15 @@ FocusScope {
             Rectangle {
                 id: viewModeButton
                 objectName: "drawerViewModeButton"
+                // Hidden + collapsed when HomeSpike is off — the drawer reverts
+                // to stock (the lists anchor to this, so 0 height keeps them flush).
+                visible: hsSettings.enabled
                 anchors {
                     right: parent.right; top: searchFieldContainer.bottom
-                    rightMargin: units.gu(1); topMargin: units.gu(0.5)
+                    rightMargin: units.gu(1); topMargin: visible ? units.gu(0.5) : 0
                 }
                 width: viewModeLabel.implicitWidth + units.gu(3)
-                height: units.gu(3.5)
+                height: visible ? units.gu(3.5) : 0
                 color: viewModeMouse.pressed ? "#2a3257" : "#1d2540"
                 border.color: "#3a456a"; border.width: 1
                 radius: height / 2
@@ -449,7 +452,8 @@ FocusScope {
             DrawerGridView {
                 id: appList
                 objectName: "drawerAppList"
-                visible: contentContainer.viewMode === "standard"
+                // When HomeSpike is off, always show the stock standard grid.
+                visible: !hsSettings.enabled || contentContainer.viewMode === "standard"
                 anchors {
                     left: parent.left
                     right: parent.right
@@ -481,7 +485,7 @@ FocusScope {
             ListView {
                 id: sectionedList
                 objectName: "drawerSectionedList"
-                visible: contentContainer.viewMode === "categories" || contentContainer.viewMode === "az"
+                visible: hsSettings.enabled && (contentContainer.viewMode === "categories" || contentContainer.viewMode === "az")
                 anchors {
                     left: parent.left
                     right: parent.right

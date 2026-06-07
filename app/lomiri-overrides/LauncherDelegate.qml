@@ -16,6 +16,7 @@
 
 import QtQuick 2.15
 import Lomiri.Components 1.3
+import GSettings 1.0
 
 Item {
     id: root
@@ -54,10 +55,13 @@ Item {
     // spin the icon upright to match. Loader-isolated (file URL into HomeSpike's
     // /opt tree) so a missing QtSensors plugin degrades gracefully (angle 0).
     property int deviceAngle: _orientationProbe.item ? _orientationProbe.item.angle : 0
+    // Master kill-switch: when HomeSpike is disabled the home isn't portrait-
+    // locked, so the launcher must behave like stock — no icon re-orientation.
+    GSettings { id: hsSettings; schema.id: "com.lomiri.HomeSpike" }
     Loader {
         id: _orientationProbe
         source: "file:///opt/home-spike/sensors/OrientationProbe.qml"
-        active: true
+        active: hsSettings.enabled
         asynchronous: true
     }
 

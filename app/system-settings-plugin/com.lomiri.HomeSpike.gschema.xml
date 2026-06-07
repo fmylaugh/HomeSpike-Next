@@ -23,6 +23,17 @@
         their HomeSpike-specific code paths short-circuit).
       </description>
     </key>
+    <key name="indicator-inset" type="b">
+      <default>false</default>
+      <summary>Inset top-bar indicators for rounded corners</summary>
+      <description>
+        When true, the top panel's indicator row (clock, battery, sound, …)
+        and its pull-down menu are pushed inward from the right edge so a
+        device's rounded screen corner doesn't crop the rightmost icon. The
+        indicator menus still pull down normally. Independent of the
+        home-screen toggle — it applies whether HomeSpike is on or off.
+      </description>
+    </key>
     <key name="pending-adds" type="s">
       <default>''</default>
       <summary>"Add to HomeSpike" inbox</summary>
